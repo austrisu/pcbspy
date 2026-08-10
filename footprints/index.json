@@ -1,0 +1,16 @@
+[
+  { "name": "R 0402 (1005 metric)", "category": "Resistor", "file": "R_0402_1005Metric.kicad_mod" },
+  { "name": "R 0603 (1608 metric)", "category": "Resistor", "file": "R_0603_1608Metric.kicad_mod" },
+  { "name": "R 0805 (2012 metric)", "category": "Resistor", "file": "R_0805_2012Metric.kicad_mod" },
+  { "name": "R 1206 (3216 metric)", "category": "Resistor", "file": "R_1206_3216Metric.kicad_mod" },
+  { "name": "C 0402 (1005 metric)", "category": "Capacitor", "file": "C_0402_1005Metric.kicad_mod" },
+  { "name": "C 0603 (1608 metric)", "category": "Capacitor", "file": "C_0603_1608Metric.kicad_mod" },
+  { "name": "C 0805 (2012 metric)", "category": "Capacitor", "file": "C_0805_2012Metric.kicad_mod" },
+  { "name": "SOT-23", "category": "SOT / SOIC", "file": "SOT-23.kicad_mod" },
+  { "name": "SOIC-8 (1.27 mm)", "category": "SOT / SOIC", "file": "SOIC-8_3.9x4.9mm_P1.27mm.kicad_mod" },
+  { "name": "QFN-16 (0.5 mm, EP)", "category": "QFN", "file": "QFN-16-1EP_3x3mm_P0.5mm_EP1.7x1.7mm.kicad_mod" },
+  { "name": "Pin header 1x4 (2.54 mm)", "category": "Header", "file": "PinHeader_1x04_P2.54mm_Vertical.kicad_mod" },
+  { "name": "Pin header 2x5 (2.54 mm)", "category": "Header", "file": "PinHeader_2x05_P2.54mm_Vertical.kicad_mod" },
+  { "name": "BGA-153 eMMC (8x8, 0.5 mm)", "category": "BGA / eMMC", "file": "BGA-153_eMMC_8.0x8.0mm_P0.5mm.kicad_mod" },
+  {"name": "LFBGA-153", "category": "BGA / eMMc", "file": "LFBGA-153_11.5x13x1.4mm_Layout14x14_P0.5mm_Ball0.3mm.kicad_mod"}
+]

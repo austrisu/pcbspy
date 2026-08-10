@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Layered Image Annotator</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Top line: import / project -->
+    <header id="topbar">
+      <div class="brand">
+        <span class="tb-name">PCB Annotator</span>
+        <span class="tb-sub">image layers · footprints · net tracing</span>
+      </div>
+      <label class="btn primary" for="fileInput">＋ Add Images</label>
+      <input id="fileInput" type="file" accept="image/*" multiple hidden>
+      <button class="btn" id="footprintBtn" title="Place a KiCad footprint as a layer">▦ Add Footprint</button>
+      <span class="spacer"></span>
+      <button class="btn" id="alignBtn" title="Experimental: align two layers by landmarks">⧉ Align layers</button>
+      <button class="btn ghost" id="loadBtn" title="Open a saved .zip project">Open project…</button>
+      <button class="btn" id="saveBtn" title="Save project as .zip">💾 Save</button>
+    </header>
+
+    <div id="body">
+      <!-- Left: tools -->
+      <nav id="tools">
+        <div class="tool-group">
+          <span class="tool-label">View</span>
+          <button class="btn tool" data-tool="pan" title="Pan / zoom (H). Space+drag anywhere.">✋ Pan</button>
+          <button class="btn" id="resetView" title="Fit active layer to view">⤢ Fit</button>
+        </div>
+
+        <div class="tool-group">
+          <span class="tool-label">Layer</span>
+          <button class="btn tool" data-tool="move" title="Move (M)">✥ Move</button>
+          <button class="btn tool" data-tool="scale" title="Scale (S)">⤢ Scale</button>
+          <button class="btn tool" data-tool="rotate" title="Rotate (R)">⟳ Rotate</button>
+          <button class="btn tool" data-tool="flip" title="Flip">⇄ Flip</button>
+          <div id="flipActions" class="flip-actions">
+            <button class="btn small" id="flipH" title="Flip horizontally">⇄ Horizontal</button>
+            <button class="btn small" id="flipV" title="Flip vertically">⇅ Vertical</button>
+          </div>
+          <button class="btn tool" data-tool="freeform" title="Freeform / perspective (F)">◱ Freeform</button>
+        </div>
+
+        <div class="tool-group">
+          <span class="tool-label">Annotate</span>
+          <button class="btn tool" data-tool="via" title="Via — green circle"><span class="swatch circle" style="background:#3ddc84"></span> Via</button>
+          <button class="btn tool" data-tool="tag" title="Tag — yellow rhomb"><span class="swatch rhomb" style="background:#ffd166"></span> Tag</button>
+          <button class="btn tool" data-tool="hole" title="Hole — blue circle"><span class="swatch circle" style="background:#4a90d9"></span> Hole</button>
+          <button class="btn tool" data-tool="pad" title="Pad — silver square (component solder pad)"><span class="swatch square" style="background:#aab2bd"></span> Pad</button>
+          <button class="btn tool" data-tool="ground" title="Ground — black circle"><span class="swatch circle" style="background:#000;border-color:#888"></span> Ground</button>
+          <button class="btn tool" data-tool="vcc" title="Vcc — bright red circle"><span class="swatch circle" style="background:#ff1e1e"></span> Vcc</button>
+          <div id="pointOptions" class="sub-options">
+            <label class="size-row"><span id="pointSizeKind">Via</span> size (px on image)
+              <input id="pointSize" type="number" min="1" max="1000" step="1" value="8">
+            </label>
+          </div>
+          <button class="btn tool" data-tool="rect" title="Rectangle (B)">▭ Rect</button>
+          <button class="btn tool" data-tool="quad" title="Freeform rectangle — click 4 corners">▰ Freeform Rect</button>
+          <button class="btn tool" data-tool="line" title="Polyline — click points, double-click to finish">⟋ Line</button>
+          <button class="btn tool" data-tool="marker" title="Marker (K)">⚑ Marker</button>
+        </div>
+
+        <div class="tool-group">
+          <span class="tool-label">Nets</span>
+          <button class="btn tool" data-tool="net" title="Assign nets — click a dot">⚡ Nets</button>
+        </div>
+      </nav>
+
+      <!-- Center: canvas stage -->
+      <div id="stage">
+        <canvas id="glCanvas"></canvas>
+        <canvas id="overlay"></canvas>
+
+        <!-- Experimental landmark-alignment wizard -->
+        <div id="alignPanel" class="align-panel"></div>
+
+        <!-- Marker editor popup -->
+        <div id="markerPopup" class="popup">
+          <label>Short name (always visible)
+            <input id="mpShort" type="text" maxlength="24" placeholder="e.g. R1">
+          </label>
+          <label>Description (shown on click)
+            <textarea id="mpDesc" rows="4" placeholder="Longer notes…"></textarea>
+          </label>
+          <div class="popup-actions">
+            <button class="btn danger small" id="mpDelete">Delete</button>
+            <span class="spacer"></span>
+            <button class="btn small" id="mpClose">Close</button>
+            <button class="btn primary small" id="mpSave">Save</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right: layers + opacity -->
+      <aside id="panel">
+        <section class="panel-section">
+          <h2>Layers</h2>
+          <p class="panel-hint">Top of the list is the front-most layer.</p>
+          <div id="layerList"></div>
+        </section>
+
+        <section class="panel-section">
+          <h2>Annotate</h2>
+          <div id="annotateView"></div>
+        </section>
+
+        <section class="panel-section">
+          <h2>Nets</h2>
+          <div id="netsView"></div>
+        </section>
+      </aside>
+    </div>
+
+    <footer id="statusbar">
+      <span id="hint"></span>
+      <span id="readout"></span>
+    </footer>
+
+    <!-- Footprint picker -->
+    <div id="footprintModal" class="fp-modal">
+      <div class="fp-card-panel">
+        <div class="fp-head">
+          <h3>Add Footprint</h3>
+          <button class="btn ghost small" id="fpClose">✕</button>
+        </div>
+        <p class="panel-hint">Simplified KiCad footprints, placed as a layer you can scale, rotate, freeform-align and adjust like an image. Add more by dropping <code>.kicad_mod</code> files in <code>/footprints</code> and listing them in <code>index.json</code>.</p>
+        <div id="fpItems" class="fp-items"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <script src="js/mat3.js"></script>
+  <script src="js/renderer.js"></script>
+  <script src="js/annotations.js"></script>
+  <script src="js/persistence.js"></script>
+  <script src="js/align.js"></script>
+  <script src="js/nets.js"></script>
+  <script src="js/footprints-data.js"></script>
+  <script src="js/footprints.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
