@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PCBSpy — Help</title>
+<style>
+  :root { --paper:#F0EDE4; --paper-2:#E8E4D8; --ink:#14171A; --ink-2:#4A4E52; --ink-3:#8B8E8A; --hazard:#E8531B; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font-family: "JetBrains Mono","IBM Plex Mono",ui-monospace,Consolas,monospace;
+    line-height: 1.55; font-size: 14px;
+  }
+  .wrap { max-width: 820px; margin: 0 auto; padding: 32px 24px 80px; }
+  header { border-bottom: 2px solid var(--ink); padding-bottom: 12px; margin-bottom: 8px; }
+  h1 { margin: 0; font-size: 24px; letter-spacing: .1em; text-transform: uppercase; }
+  .sub { color: var(--ink-3); font-size: 12px; letter-spacing: .06em; }
+  h2 { font-size: 15px; letter-spacing: .1em; text-transform: uppercase; border-bottom: 1px solid var(--ink); padding-bottom: 4px; margin: 28px 0 10px; }
+  p, li { color: var(--ink-2); }
+  b, strong { color: var(--ink); }
+  a { color: var(--hazard); }
+  ul { padding-left: 20px; }
+  li { margin: 4px 0; }
+  code, kbd { background: var(--paper-2); border: 1px solid var(--ink-3); padding: 0 5px; font-size: 12px; }
+  kbd { border-bottom-width: 2px; }
+  .lead { font-size: 15px; color: var(--ink); }
+  .back { display: inline-block; margin-top: 8px; border: 1px solid var(--ink); background: var(--paper-2); color: var(--ink); text-decoration: none; padding: 5px 12px; text-transform: uppercase; letter-spacing: .08em; font-size: 12px; }
+  .back:hover { background: var(--ink); color: var(--paper); }
+  table { border-collapse: collapse; width: 100%; margin: 8px 0; }
+  td, th { border: 1px solid var(--ink-3); padding: 5px 8px; text-align: left; font-size: 13px; }
+  th { background: var(--paper-2); text-transform: uppercase; letter-spacing: .06em; font-size: 11px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>PCBSpy</h1>
+    <div class="sub">image layers · footprints · net tracing — help &amp; workflow</div>
+  </header>
+  <a class="back" href="index.html">← Back to PCBSpy</a>
+
+  <p class="lead">PCBSpy is a fully in-browser tool for reverse-engineering and documenting a PCB from photographs: stack board images as layers, align top/bottom scans, drop electrical annotations (pads, vias, holes), wire them into <b>nets</b>, and overlay KiCad footprints. Everything is local — nothing is uploaded; save/load a whole project as a <code>.zip</code>.</p>
+
+  <h2>Getting around</h2>
+  <ul>
+    <li><b>Pan / zoom:</b> the Pan tool drags the view; the mouse wheel zooms toward the cursor. <kbd>Space</kbd>+drag or middle-mouse pans in any tool. <b>Fit</b> frames the active layer.</li>
+    <li><b>Left rail</b> = tools. <b>Right panel</b> = Layers, Annotate (by board side), and Nets. Drag the thin splitters between panels to resize them.</li>
+    <li><b>Undo / redo:</b> <kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd>.</li>
+  </ul>
+
+  <h2>Layers</h2>
+  <ul>
+    <li><b>+ Add Images</b> to import board photos (you're asked for a name; the filename is the default). <b>▦ Add Footprint</b> drops a simplified KiCad footprint as a layer.</li>
+    <li>Transform the active layer with <b>Move / Scale / Rotate / Flip / Freeform</b> (Freeform drags the 4 corners for perspective correction). It's non-destructive.</li>
+    <li>Per layer: opacity, a collapsible <b>Adjustments</b> block (brightness/contrast/saturation/hue/sharpen), reorder (▲/▼), show/hide (eye), <b>rename</b> (✎), <b>lock</b> (🔓/🔒 — a locked layer can't be transformed), and delete (✕).</li>
+  </ul>
+
+  <h2>Annotations &amp; board side</h2>
+  <p>Every annotation carries a <b>side</b> — <b>T</b>op, <b>B</b>ottom, or <b>⊕</b> through (both). Vias/holes default to through; everything else to top.</p>
+  <ul>
+    <li><b>Dots:</b> Via (green), Tag (yellow), Hole (blue, mechanical), Pad (silver square), Ground (black), Vcc (red).</li>
+    <li><b>Shapes:</b> Rectangle (two clicks), Freeform quad (four clicks), Line/polyline (click points, double-click or <kbd>Enter</kbd> to finish, <kbd>Esc</kbd> cancels), Marker (click a point/rect to attach a label).</li>
+    <li><b>Tool options:</b> click a tool to open its popover — set the <b>Side</b>, <b>Size</b>, <b>Color</b>, and (for electrical dots) a <b>Net</b>. The tool button shows the current side letter + colour.</li>
+    <li><b>Move</b> a placed dot/marker by pressing on it. <b>Right-click</b> any annotation to change its Side / Size / Color / Net, or Delete it.</li>
+    <li>The Annotate panel groups items by side (TOP / BOTTOM / THROUGH) with a master eye per side and per-kind eyes; hiding a side/kind hides its marks (and their net overlay).</li>
+  </ul>
+
+  <h2>Nets (wiring)</h2>
+  <ul>
+    <li><b>Create a net</b> in the Nets panel (name + Create), then <b>right-click</b> a via/tag/pad/hole to assign it — or set the Net in the tool popover before placing.</li>
+    <li><b>Wire with the Line tool:</b> endpoints snap onto dots. Drawing a line from a net-assigned dot spreads that net onto the connected dot. <b>Through</b> vias bridge top and bottom; other dots only connect within their own side.</li>
+    <li><b>Guard rails:</b> while drawing, hovering a dot that's on a <b>different net</b> or the <b>other layer</b> shows an error and the click is blocked — pick a compatible dot or <kbd>Esc</kbd>.</li>
+    <li><b>Color by net</b> tints dots/traces by net. <b>Hover a net</b> in the list to highlight all its members on the board.</li>
+    <li>Holes are mechanical: they never auto-connect through lines, but can be given a net manually for reference.</li>
+  </ul>
+
+  <h2>Aligning top &amp; bottom</h2>
+  <p><b>⧉ Align layers</b> opens a landmark wizard: pick a fixed Top and a moving Bottom layer, place 5–8 matching feature pairs (the active image is brought to the front for each side), then <b>Compute</b> a least-squares homography and <b>Accept</b>. The result co-registers both sides in the same world coordinates.</p>
+
+  <h2>Saving</h2>
+  <p><b>💾 Save</b> writes the whole project (images stored verbatim, all layers/annotations/nets) to <code>pcbspy_data_&lt;timestamp&gt;.zip</code>. <b>Open project…</b> loads one back. Use a browser that supports the File System Access API (Chrome/Edge) for native dialogs, or it falls back to download + file-picker.</p>
+
+  <h2>Keyboard</h2>
+  <table>
+    <tr><th>Key</th><th>Action</th></tr>
+    <tr><td><kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd></td><td>Undo / Redo</td></tr>
+    <tr><td><kbd>Space</kbd>+drag</td><td>Pan (in any tool)</td></tr>
+    <tr><td><kbd>Enter</kbd></td><td>Finish the current polyline</td></tr>
+    <tr><td><kbd>Esc</kbd></td><td>Cancel the current draw / deselect</td></tr>
+    <tr><td><kbd>Delete</kbd> / <kbd>Backspace</kbd></td><td>Delete the selected annotation</td></tr>
+    <tr><td>Arrow keys</td><td>Nudge landmarks (in the align wizard)</td></tr>
+  </table>
+
+  <a class="back" href="index.html">← Back to PCBSpy</a>
+</div>
+</body>
+</html>

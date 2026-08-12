@@ -486,3 +486,59 @@ select, .nets-input, .size-row input, .popup input, .popup textarea, .al-field s
 .layer-row.locked { background: #DED8C6; border-color: var(--ink-3); }
 .layer-row.locked .layer-name { color: var(--ink-2); }
 .icon-btn.locked { color: var(--hazard); }
+
+/* ---- side/size/color: tool popover, indicators, side groups, ctx menu ---- */
+.tool-popover { display: none; position: fixed; z-index: 40; width: 190px; background: var(--paper); border: 1px solid var(--ink); padding: 8px; }
+.tp-title { font-size: 11px; text-transform: uppercase; letter-spacing: .1em; margin-bottom: 8px; color: var(--ink-2); }
+.tp-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.tp-lab { width: 38px; font-size: 10px; text-transform: uppercase; letter-spacing: .08em; color: var(--ink-2); flex-shrink: 0; }
+.tp-seg { display: flex; align-items: center; flex-wrap: wrap; }
+.tp-seg button { min-width: 24px; height: 22px; border: 1px solid var(--ink); background: var(--paper-2); color: var(--ink); font: inherit; font-size: 12px; cursor: pointer; margin-left: -1px; }
+.tp-seg button:first-child { margin-left: 0; }
+.tp-seg button.on { background: var(--ink); color: var(--paper); }
+.tp-num { width: 46px; height: 22px; margin-left: 6px; border: 1px solid var(--ink); background: var(--paper); color: var(--ink); font: inherit; padding: 0 4px; }
+.tp-colors { display: flex; flex-wrap: wrap; gap: 3px; }
+.tp-color { width: 16px; height: 16px; border: 1px solid var(--ink-3); cursor: pointer; padding: 0; }
+.tp-color.on { outline: 2px solid var(--ink); outline-offset: 1px; }
+
+#tools .btn { position: relative; }
+.tool-ind { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); font-size: 11px; font-weight: 700; pointer-events: none; text-shadow: 0 0 2px rgba(0,0,0,.45); }
+
+.side-group { margin-bottom: 10px; }
+.side-group.off { opacity: .55; }
+.side-head { display: flex; align-items: center; gap: 6px; background: var(--paper-2); border: 1px solid var(--ink); padding: 5px 8px; cursor: pointer; }
+.side-head .side-name { font-size: 12px; letter-spacing: .1em; }
+.side-head .side-count { flex: 1; text-align: right; color: var(--ink-2); font-size: 12px; font-variant-numeric: tabular-nums; }
+.side-kinds { padding-left: 8px; margin-top: 4px; }
+
+.ctx-menu { display: none; position: fixed; z-index: 45; width: 180px; background: var(--paper); border: 1px solid var(--ink); padding: 8px; }
+.ctx-menu .ctx-del { width: 100%; margin-top: 4px; }
+
+/* ---- resizable panel splitters ---- */
+.splitter { width: 7px; flex-shrink: 0; cursor: col-resize; background: var(--paper); display: flex; align-items: center; justify-content: center; }
+.splitter:hover { background: var(--paper-2); }
+.splitter .grip { width: 3px; height: 26px; border-left: 1px solid var(--ink-3); border-right: 1px solid var(--ink-3); }
+.splitter:hover .grip { border-color: var(--ink); }
+
+/* eye icons sit centred in the icon buttons */
+.icon-btn svg { display: block; }
+
+/* net-mismatch / cross-side error tooltip */
+#annTooltip {
+  position: fixed; z-index: 50; display: none;
+  background: var(--hazard); color: #fff; border: 1px solid var(--hazard-deep);
+  padding: 3px 7px; font-size: 11px; max-width: 230px; pointer-events: none;
+  letter-spacing: .02em;
+}
+.tp-net { width: 100%; height: 22px; border: 1px solid var(--ink); background: var(--paper); color: var(--ink); font: inherit; font-size: 11px; }
+
+/* wider tool rail so labels + side/colour indicators fit */
+#tools { width: 168px; }
+
+/* themed name / rename dialog */
+.name-modal { display: none; position: fixed; inset: 0; z-index: 60; background: rgba(20,23,26,.4); align-items: center; justify-content: center; }
+.name-modal.open { display: flex; }
+.name-card { width: min(360px, 90%); background: var(--paper); border: 1px solid var(--ink); padding: 16px; }
+.name-title { font-size: 12px; text-transform: uppercase; letter-spacing: .1em; color: var(--ink-2); margin-bottom: 10px; }
+.name-card input { width: 100%; }
+.name-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }

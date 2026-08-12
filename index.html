@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Layered Image Annotator</title>
+  <title>PCBSpy</title>
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -11,7 +11,7 @@
     <!-- Top line: import / project -->
     <header id="topbar">
       <div class="brand">
-        <span class="tb-name">PCB Annotator</span>
+        <span class="tb-name">PCBSpy</span>
         <span class="tb-sub">image layers · footprints · net tracing</span>
       </div>
       <label class="btn primary" for="fileInput">＋ Add Images</label>
@@ -21,6 +21,7 @@
       <button class="btn" id="alignBtn" title="Experimental: align two layers by landmarks">⧉ Align layers</button>
       <button class="btn ghost" id="loadBtn" title="Open a saved .zip project">Open project…</button>
       <button class="btn" id="saveBtn" title="Save project as .zip">💾 Save</button>
+      <button class="btn ghost" id="helpBtn" title="Open the help page">? Help</button>
     </header>
 
     <div id="body">
@@ -59,16 +60,13 @@
             </label>
           </div>
           <button class="btn tool" data-tool="rect" title="Rectangle (B)">▭ Rect</button>
-          <button class="btn tool" data-tool="quad" title="Freeform rectangle — click 4 corners">▰ Freeform Rect</button>
+          <button class="btn tool" data-tool="quad" title="Freeform quadrilateral — click 4 corners">▰ Freeform</button>
           <button class="btn tool" data-tool="line" title="Polyline — click points, double-click to finish">⟋ Line</button>
           <button class="btn tool" data-tool="marker" title="Marker (K)">⚑ Marker</button>
         </div>
-
-        <div class="tool-group">
-          <span class="tool-label">Nets</span>
-          <button class="btn tool" data-tool="net" title="Assign nets — click a dot">⚡ Nets</button>
-        </div>
       </nav>
+
+      <div id="splitL" class="splitter" title="Drag to resize"><span class="grip"></span></div>
 
       <!-- Center: canvas stage -->
       <div id="stage">
@@ -77,6 +75,9 @@
 
         <!-- Experimental landmark-alignment wizard -->
         <div id="alignPanel" class="align-panel"></div>
+
+        <!-- Right-click annotation context menu -->
+        <div id="ctxMenu" class="ctx-menu"></div>
 
         <!-- Marker editor popup -->
         <div id="markerPopup" class="popup">
@@ -94,6 +95,8 @@
           </div>
         </div>
       </div>
+
+      <div id="splitR" class="splitter" title="Drag to resize"><span class="grip"></span></div>
 
       <!-- Right: layers + opacity -->
       <aside id="panel">
@@ -119,6 +122,24 @@
       <span id="hint"></span>
       <span id="readout"></span>
     </footer>
+
+    <!-- Tool-options popover (side / size / color / net) -->
+    <div id="toolPopover" class="tool-popover"></div>
+
+    <!-- Net-error tooltip (mismatch / cross-side) -->
+    <div id="annTooltip"></div>
+
+    <!-- Themed name / rename dialog -->
+    <div id="nameModal" class="name-modal">
+      <div class="name-card">
+        <div class="name-title" id="nameModalTitle">Name</div>
+        <input id="nameModalInput" class="nets-input" type="text" autocomplete="off">
+        <div class="name-actions">
+          <button class="btn small" id="nameModalCancel">Cancel</button>
+          <button class="btn small primary" id="nameModalOk">OK</button>
+        </div>
+      </div>
+    </div>
 
     <!-- Footprint picker -->
     <div id="footprintModal" class="fp-modal">

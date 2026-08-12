@@ -29,23 +29,29 @@
   let _seq = 1;
   function uid(prefix) { return prefix + '_' + (_seq++) + '_' + Date.now().toString(36); }
 
+  // via/hole default to a through-board node; everything else to the top side.
+  function defaultSide(kind) { return (kind === 'via' || kind === 'hole') ? 'through' : 'top'; }
+
   class Annotations {
     constructor() {
       this.shapes = [];
       this.markers = [];
-      this.hiddenKinds = new Set(); // point kinds hidden via the Annotate view
+      this.hiddenKinds = new Set(); // per-kind eyes (nested under a side)
+      this.hiddenSides = new Set(); // side-group master eyes: top | bottom | through
+      this.customNets = new Set();  // user-created net names (may have no members yet)
     }
 
     clear() { this.shapes = []; this.markers = []; }
 
-    // kind: 'via' | 'tag' | 'hole'. size is an ABSOLUTE radius in world (image)
-    // units, so a point keeps its size relative to the image and scales on zoom.
-    addPoint(wx, wy, kind, size) {
+    // side: 'top' | 'bottom' | 'through'. size is an ABSOLUTE world radius. color
+    // is an optional hex override (falls back to the kind's legend colour).
+    addPoint(wx, wy, kind, size, side, color) {
+      kind = POINT_KINDS[kind] ? kind : 'via';
       const s = {
-        id: uid('pt'), type: 'point', x: wx, y: wy,
-        kind: POINT_KINDS[kind] ? kind : 'via',
-        size: size || POINT_R,
+        id: uid('pt'), type: 'point', x: wx, y: wy, kind,
+        size: size || POINT_R, side: side || defaultSide(kind),
       };
+      if (color) s.color = color;
       this.shapes.push(s);
       return s;
     }
@@ -60,37 +66,52 @@
       return Math.max(2, Math.hypot(c1[0] - c0[0], c1[1] - c0[1]));
     }
 
-    addRect(wx, wy, w, h) {
-      const s = { id: uid('rc'), type: 'rect', x: wx, y: wy, w, h };
+    addRect(wx, wy, w, h, side, color) {
+      const s = { id: uid('rc'), type: 'rect', x: wx, y: wy, w, h, side: side || 'top' };
+      if (color) s.color = color;
       this.shapes.push(s);
       return s;
     }
 
     // Freeform quadrilateral defined by 4 world points (TL,TR,BR,BL order as clicked).
-    addQuad(pts) {
-      const s = { id: uid('qd'), type: 'quad', pts: pts.map(p => [p[0], p[1]]) };
+    addQuad(pts, side, color) {
+      const s = { id: uid('qd'), type: 'quad', pts: pts.map(p => [p[0], p[1]]), side: side || 'top' };
+      if (color) s.color = color;
       this.shapes.push(s);
       return s;
     }
 
-    // Open polyline: a single entity made of >=2 world points.
-    addPolyline(pts) {
-      const s = { id: uid('ln'), type: 'line', pts: pts.map(p => [p[0], p[1]]) };
+    // Open polyline: a single entity made of >=2 world points. size = stroke width.
+    addPolyline(pts, side, size, color) {
+      const s = { id: uid('ln'), type: 'line', pts: pts.map(p => [p[0], p[1]]), side: side || 'top', size: size || 2 };
+      if (color) s.color = color;
       this.shapes.push(s);
       return s;
     }
 
     shapesOfType(type) { return this.shapes.filter(s => s.type === type); }
 
-    addMarker(targetId, wx, wy, shortName, description) {
+    addMarker(targetId, wx, wy, shortName, description, side, color) {
       const m = {
         id: uid('mk'), type: 'marker', targetId,
         x: wx, y: wy,
         shortName: shortName || 'M',
         description: description || '',
+        side: side || 'top',
       };
+      if (color) m.color = color;
       this.markers.push(m);
       return m;
+    }
+
+    // Kind label used for the per-kind eye / annotate-list grouping.
+    kindOf(s) { return s.type === 'point' ? (s.kind || 'via') : s.type; }
+    // Visible iff its side group is on AND its kind is on. Through marks carry
+    // side='through', so hiding 'top'/'bottom' never hides them.
+    isVisibleShape(s) {
+      if (this.hiddenSides.has(s.side || 'top')) return false;
+      if (this.hiddenKinds.has(this.kindOf(s))) return false;
+      return true;
     }
 
     getShape(id) { return this.shapes.find(s => s.id === id) || null; }
@@ -129,43 +150,40 @@
     hitTest(sx, sy, cam) {
       // Markers (iterate last-added first = on top)
       for (let i = this.markers.length - 1; i >= 0; i--) {
+        if (!this.isVisibleShape(this.markers[i])) continue;
         const box = this._markerBox(this.markers[i], cam);
         if (sx >= box.x && sx <= box.x + box.w && sy >= box.y && sy <= box.y + box.h) {
           return { kind: 'marker', id: this.markers[i].id };
         }
       }
-      // Points (skip hidden kinds)
+      // Points
       for (let i = this.shapes.length - 1; i >= 0; i--) {
         const s = this.shapes[i];
-        if (s.type !== 'point') continue;
-        if (this.hiddenKinds.has(s.kind || 'via')) continue;
+        if (s.type !== 'point' || !this.isVisibleShape(s)) continue;
         const [px, py] = cam.worldToScreen([s.x, s.y]);
         const r = this.pointScreenRadius(s, cam);
         if (Math.hypot(sx - px, sy - py) <= r + 4) return { kind: 'shape', id: s.id };
       }
       // Polylines (near any segment)
-      if (!this.hiddenKinds.has('line'))
       for (let i = this.shapes.length - 1; i >= 0; i--) {
         const s = this.shapes[i];
-        if (s.type !== 'line' || !s.pts || s.pts.length < 2) continue;
+        if (s.type !== 'line' || !s.pts || s.pts.length < 2 || !this.isVisibleShape(s)) continue;
         const c = s.pts.map(p => cam.worldToScreen(p));
         for (let j = 0; j < c.length - 1; j++) {
           if (distToSeg(sx, sy, c[j], c[j + 1]) <= 6) return { kind: 'shape', id: s.id };
         }
       }
       // Quads
-      if (!this.hiddenKinds.has('quad'))
       for (let i = this.shapes.length - 1; i >= 0; i--) {
         const s = this.shapes[i];
-        if (s.type !== 'quad') continue;
+        if (s.type !== 'quad' || !this.isVisibleShape(s)) continue;
         const c = s.pts.map(p => cam.worldToScreen(p));
         if (pointInPoly(sx, sy, c) || nearPolyEdge(sx, sy, c, 6)) return { kind: 'shape', id: s.id };
       }
       // Rects
-      if (!this.hiddenKinds.has('rect'))
       for (let i = this.shapes.length - 1; i >= 0; i--) {
         const s = this.shapes[i];
-        if (s.type !== 'rect') continue;
+        if (s.type !== 'rect' || !this.isVisibleShape(s)) continue;
         const c = this.rectCorners(s).map(p => cam.worldToScreen(p));
         if (pointInPoly(sx, sy, c) || nearPolyEdge(sx, sy, c, 6)) {
           return { kind: 'shape', id: s.id };
@@ -205,64 +223,59 @@
       ctx.textBaseline = 'middle';
 
       // Rectangles
-      if (!this.hiddenKinds.has('rect'))
       for (const s of this.shapes) {
-        if (s.type !== 'rect') continue;
+        if (s.type !== 'rect' || !this.isVisibleShape(s)) continue;
         const sel = selected && selected.kind === 'shape' && selected.id === s.id;
+        const col = s.color || '#4a90d9';
         const c = this.rectCorners(s).map(p => cam.worldToScreen(p));
         ctx.beginPath();
         ctx.moveTo(c[0][0], c[0][1]);
         for (let i = 1; i < c.length; i++) ctx.lineTo(c[i][0], c[i][1]);
         ctx.closePath();
-        ctx.fillStyle = sel ? 'rgba(90,170,255,0.16)' : 'rgba(90,170,255,0.08)';
-        ctx.fill();
-        ctx.lineWidth = 2;
-        ctx.strokeStyle = sel ? '#5aa0ff' : '#4a90d9';
+        ctx.globalAlpha = sel ? 0.18 : 0.08; ctx.fillStyle = col; ctx.fill(); ctx.globalAlpha = 1;
+        ctx.lineWidth = sel ? 3 : 2;
+        ctx.strokeStyle = col;
         ctx.stroke();
-        if (sel) {
-          for (const h of this.rectHandles(s, cam)) drawHandle(ctx, h.x, h.y);
-        }
+        if (sel) for (const h of this.rectHandles(s, cam)) drawHandle(ctx, h.x, h.y);
       }
 
       // Freeform quads
-      if (!this.hiddenKinds.has('quad'))
       for (const s of this.shapes) {
-        if (s.type !== 'quad') continue;
+        if (s.type !== 'quad' || !this.isVisibleShape(s)) continue;
         const sel = selected && selected.kind === 'shape' && selected.id === s.id;
+        const col = s.color || QUAD_COLOR;
         const c = s.pts.map(p => cam.worldToScreen(p));
         ctx.beginPath();
         ctx.moveTo(c[0][0], c[0][1]);
         for (let i = 1; i < c.length; i++) ctx.lineTo(c[i][0], c[i][1]);
         ctx.closePath();
-        ctx.fillStyle = sel ? 'rgba(176,124,255,0.18)' : 'rgba(176,124,255,0.10)';
-        ctx.fill();
-        ctx.lineWidth = 2;
-        ctx.strokeStyle = QUAD_COLOR;
+        ctx.globalAlpha = sel ? 0.18 : 0.10; ctx.fillStyle = col; ctx.fill(); ctx.globalAlpha = 1;
+        ctx.lineWidth = sel ? 3 : 2;
+        ctx.strokeStyle = col;
         ctx.stroke();
         if (sel) for (const p of c) drawHandle(ctx, p[0], p[1]);
       }
 
       // Polylines (open, single entity)
-      if (!this.hiddenKinds.has('line'))
       for (const s of this.shapes) {
-        if (s.type !== 'line' || !s.pts || s.pts.length < 2) continue;
+        if (s.type !== 'line' || !s.pts || s.pts.length < 2 || !this.isVisibleShape(s)) continue;
         const sel = selected && selected.kind === 'shape' && selected.id === s.id;
         const c = s.pts.map(p => cam.worldToScreen(p));
         ctx.beginPath();
         ctx.moveTo(c[0][0], c[0][1]);
         for (let i = 1; i < c.length; i++) ctx.lineTo(c[i][0], c[i][1]);
-        ctx.lineWidth = sel ? 3 : 2;
-        ctx.strokeStyle = LINE_COLOR;
+        ctx.lineWidth = (s.size || 2) + (sel ? 1 : 0);
+        if (s._err) { ctx.setLineDash([6, 4]); ctx.strokeStyle = '#9a9a9a'; }  // invalid: grayed
+        else ctx.strokeStyle = s.color || LINE_COLOR;
         ctx.stroke();
+        ctx.setLineDash([]);
         if (sel) for (const p of c) drawHandle(ctx, p[0], p[1]);
       }
 
-      // Points (kind = via/tag/hole; absolute image-unit size; per-kind hide)
+      // Points (kind shape/colour; absolute image-unit size)
       for (const s of this.shapes) {
-        if (s.type !== 'point') continue;
-        const kind = s.kind || 'via';
-        if (this.hiddenKinds.has(kind)) continue;
-        const def = POINT_KINDS[kind] || POINT_KINDS.via;
+        if (s.type !== 'point' || !this.isVisibleShape(s)) continue;
+        const def = POINT_KINDS[s.kind || 'via'] || POINT_KINDS.via;
         const sel = selected && selected.kind === 'shape' && selected.id === s.id;
         const [px, py] = cam.worldToScreen([s.x, s.y]);
         const r = this.pointScreenRadius(s, cam);
@@ -275,7 +288,7 @@
         } else {
           ctx.arc(px, py, r, 0, Math.PI * 2);
         }
-        ctx.fillStyle = def.color;
+        ctx.fillStyle = s.color || def.color;
         ctx.fill();
         ctx.lineWidth = 2;
         ctx.strokeStyle = def.stroke || '#1a1a1a';
@@ -293,47 +306,48 @@
 
       // Markers (connector + label)
       for (const m of this.markers) {
+        if (!this.isVisibleShape(m)) continue;
         const sel = selected && selected.kind === 'marker' && selected.id === m.id;
+        const stroke = sel ? '#7ee081' : (m.color || '#59b35c');
         const [ax, ay] = cam.worldToScreen(this.targetAnchor(m));
         const box = this._markerBox(m, cam);
-        // connector
-        ctx.beginPath();
-        ctx.moveTo(ax, ay);
-        ctx.lineTo(box.x, box.y + box.h);
-        ctx.lineWidth = 1.5;
-        ctx.strokeStyle = sel ? '#7ee081' : '#59b35c';
-        ctx.stroke();
-        // anchor tick
-        ctx.beginPath();
-        ctx.arc(ax, ay, 3, 0, Math.PI * 2);
-        ctx.fillStyle = '#59b35c';
-        ctx.fill();
-        // label box
+        ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(box.x, box.y + box.h);
+        ctx.lineWidth = 1.5; ctx.strokeStyle = stroke; ctx.stroke();
+        ctx.beginPath(); ctx.arc(ax, ay, 3, 0, Math.PI * 2); ctx.fillStyle = m.color || '#59b35c'; ctx.fill();
         roundRect(ctx, box.x, box.y, box.w, box.h, 4);
-        ctx.fillStyle = sel ? '#2f6d32' : '#264d28';
-        ctx.fill();
-        ctx.lineWidth = 1.5;
-        ctx.strokeStyle = sel ? '#7ee081' : '#59b35c';
-        ctx.stroke();
-        ctx.fillStyle = '#eaffea';
-        ctx.textAlign = 'left';
+        ctx.fillStyle = sel ? '#2f6d32' : '#264d28'; ctx.fill();
+        ctx.lineWidth = 1.5; ctx.strokeStyle = stroke; ctx.stroke();
+        ctx.fillStyle = '#eaffea'; ctx.textAlign = 'left';
         ctx.fillText(m.shortName, box.x + 6, box.y + box.h / 2 + 1);
       }
       ctx.restore();
     }
 
     serialize() {
+      const clean = (o) => { const c = {}; for (const k in o) if (k[0] !== '_') c[k] = o[k]; return c; };
       return {
-        shapes: this.shapes.map(s => ({ ...s })),
-        markers: this.markers.map(m => ({ ...m })),
+        shapes: this.shapes.map(clean),   // drop transient _err etc.
+        markers: this.markers.map(clean),
+        customNets: [...this.customNets],
       };
     }
 
     load(data) {
       this.clear();
       if (!data) return;
-      this.shapes = (data.shapes || []).map(s => ({ ...s }));
-      this.markers = (data.markers || []).map(m => ({ ...m }));
+      // Migrate pre-side files: via/hole -> through, else top; line width -> 2.
+      this.shapes = (data.shapes || []).map(s => {
+        const o = { ...s };
+        if (!o.side) o.side = o.type === 'point' ? defaultSide(o.kind || 'via') : 'top';
+        if (o.type === 'line' && o.size == null) o.size = 2;
+        return o;
+      });
+      this.markers = (data.markers || []).map(m => {
+        const o = { ...m };
+        if (!o.side) o.side = 'top';
+        return o;
+      });
+      this.customNets = new Set(data.customNets || []);
     }
   }
 

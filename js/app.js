@@ -9,6 +9,11 @@
   const TRANSFORM_TOOLS = ['move', 'scale', 'rotate', 'flip', 'freeform'];
   const POINT_TOOLS = ['via', 'tag', 'hole', 'pad', 'ground', 'vcc']; // each places a point of that kind
   const CROSSHAIR_TOOLS = ['via', 'tag', 'hole', 'pad', 'ground', 'vcc', 'rect', 'quad', 'line', 'marker']; // full-view guide cross
+  const ANNOTATE_TOOLS = ['via', 'tag', 'hole', 'pad', 'ground', 'vcc', 'rect', 'quad', 'line', 'marker'];
+  const SIDES = ['top', 'bottom', 'through'];
+  const SIDE_LETTER = { top: 'T', bottom: 'B', through: '⊕' };
+  const TP_COLORS = ['#ff5c5c', '#ffb03b', '#ffe14d', '#6ee36e', '#3ddc84', '#4dd2ff', '#4a90d9', '#7c8bff', '#c86bff', '#ff6bd6', '#ffffff', '#14171a'];
+  const sideForKind = (k) => (k === 'via' || k === 'hole') ? 'through' : 'top';
   const HANDLE_HIT = 10; // px radius for grabbing corner handles
 
   const App = {
@@ -21,7 +26,9 @@
     usedNames: new Set(),
     camera: { cx: 0, cy: 0, zoom: 1 },
     tool: 'pan',
-    pointSizes: { via: 8, tag: 8, hole: 8, pad: 8, ground: 8, vcc: 8 }, // per-kind absolute size (image units)
+    toolOptions: null,       // per-annotate-tool { side, size, color } (set in init)
+    popoverOpen: false,
+    popoverTool: null,
     selected: null,          // annotation selection { kind, id }
     cursor: null,            // last pointer position (screen px) for the guide cross
     adjustExpanded: false,   // layer color-adjustments section collapsed by default
@@ -57,6 +64,21 @@
       this.nets = new Nets(this);
       this.footprints = new Footprints(this);
 
+      // Per-tool remembered options (side / size / color), seeded with defaults.
+      this.toolOptions = {};
+      for (const t of ANNOTATE_TOOLS) {
+        const o = { side: sideForKind(t), color: null };
+        if (POINT_TOOLS.includes(t)) o.size = 8;
+        if (t === 'line') o.size = 2;
+        this.toolOptions[t] = o;
+      }
+      // Close the tool-options popover on click-away.
+      document.addEventListener('pointerdown', (e) => {
+        if (!this.popoverOpen) return;
+        if (e.target.closest && (e.target.closest('#toolPopover') || e.target.closest('[data-tool]'))) return;
+        this.closePopover();
+      }, true);
+
       this.cam = {
         worldToScreen: (p) => [
           (p[0] - this.camera.cx) * this.camera.zoom + this.W / 2,
@@ -71,6 +93,7 @@
       this.bindUI();
       this.bindPointer();
       this.bindKeys();
+      this.bindSplitters();
 
       window.addEventListener('resize', () => this.resize());
       this.resize();
@@ -270,10 +293,13 @@
           }
           const filename = this.uniqueName(file.name || 'image.png');
           this.blobs.set(filename, file);
+          // Ask for a layer name (default = filename; OK keeps it, or edit it).
+          const chosen = await this.promptName('Layer name', file.name || filename);
+          const name = (chosen != null && chosen.trim()) ? chosen.trim() : (file.name || filename);
           const idx = this.layers.length;
           const layer = this.buildLayer({
             filename,
-            name: file.name || filename,
+            name,
             bitmap,
             opacity: 1,
             visible: true,
@@ -361,6 +387,42 @@
       this.scheduleRender();
     },
 
+    // Themed name dialog. Resolves the entered string, or null if cancelled.
+    promptName(title, value) {
+      return new Promise((resolve) => {
+        const modal = document.getElementById('nameModal');
+        const t = document.getElementById('nameModalTitle');
+        const input = document.getElementById('nameModalInput');
+        const ok = document.getElementById('nameModalOk');
+        const cancel = document.getElementById('nameModalCancel');
+        if (!modal) { resolve(window.prompt(title, value)); return; }
+        t.textContent = title || 'Name';
+        input.value = value || '';
+        modal.classList.add('open');
+        setTimeout(() => { input.focus(); input.select(); }, 0);
+        const close = (result) => {
+          modal.classList.remove('open');
+          input.onkeydown = null; ok.onclick = null; cancel.onclick = null; modal.onclick = null;
+          resolve(result);
+        };
+        ok.onclick = () => close(input.value);
+        cancel.onclick = () => close(null);
+        input.onkeydown = (e) => {
+          if (e.key === 'Enter') { e.preventDefault(); close(input.value); }
+          else if (e.key === 'Escape') { e.preventDefault(); close(null); }
+        };
+        modal.onclick = (e) => { if (e.target === modal) close(null); };
+      });
+    },
+
+    async renameLayer(layer) {
+      const chosen = await this.promptName('Rename layer', layer.name);
+      if (chosen == null || !chosen.trim()) return;
+      this.pushUndo();
+      layer.name = chosen.trim();
+      this.renderPanel();
+    },
+
     moveLayer(id, dir) { // dir -1 = toward bottom, +1 = toward top
       const i = this.layers.findIndex(l => l.id === id);
       const j = i + dir;
@@ -383,7 +445,7 @@
         const vis = document.createElement('button');
         vis.className = 'icon-btn';
         vis.title = layer.visible ? 'Hide' : 'Show';
-        vis.textContent = layer.visible ? '◉' : '○';
+        vis.innerHTML = this.eyeSVG(layer.visible);
         vis.onclick = (e) => { e.stopPropagation(); this.pushUndo(); layer.visible = !layer.visible; this.renderPanel(); this.scheduleRender(); };
 
         const lock = document.createElement('button');
@@ -396,6 +458,10 @@
         name.className = 'layer-name';
         name.textContent = layer.name;
         name.title = layer.name;
+
+        const edit = document.createElement('button');
+        edit.className = 'icon-btn'; edit.textContent = '✎'; edit.title = 'Rename layer';
+        edit.onclick = (e) => { e.stopPropagation(); this.renameLayer(layer); };
 
         const up = document.createElement('button');
         up.className = 'icon-btn'; up.textContent = '▲'; up.title = 'Move up';
@@ -410,7 +476,7 @@
 
         const top = document.createElement('div');
         top.className = 'layer-top';
-        top.append(vis, lock, name, up, down, del);
+        top.append(vis, lock, name, edit, up, down, del);
 
         const opacityRow = this.sliderRow('Opacity', layer, 'opacity', 0, 1, 0.01, 1, v => v.toFixed(2));
 
@@ -526,9 +592,60 @@
       el.addEventListener('pointermove', (e) => this.onMove(pos(e), e));
       el.addEventListener('pointerup', (e) => { this.onUp(pos(e), e); });
       el.addEventListener('pointercancel', () => { this.drag = null; this.preview = null; });
-      el.addEventListener('pointerleave', () => { this.cursor = null; this.scheduleRender(); });
+      el.addEventListener('pointerleave', () => { this.cursor = null; const t = document.getElementById('annTooltip'); if (t) t.style.display = 'none'; this.scheduleRender(); });
       el.addEventListener('wheel', (e) => this.onWheel(pos(e), e), { passive: false });
-      el.addEventListener('contextmenu', (e) => e.preventDefault());
+      el.addEventListener('contextmenu', (e) => { e.preventDefault(); this.onContextMenu(pos(e), e); });
+      document.addEventListener('pointerdown', (e) => {
+        const m = document.getElementById('ctxMenu');
+        if (m && m.style.display === 'block' && !e.target.closest('#ctxMenu')) m.style.display = 'none';
+      }, true);
+    },
+
+    // Right-click an annotation → reassign side / colour / delete.
+    onContextMenu(sp, e) {
+      if (this.align.active) return;
+      const hit = this.ann.hitTest(sp[0], sp[1], this.cam);
+      const menu = document.getElementById('ctxMenu');
+      if (!hit) { menu.style.display = 'none'; return; }
+      this.ctxTarget = hit;
+      const obj = this.ann.get(hit.kind, hit.id);
+      const kind = this.ann.kindOf(obj);
+      const isPoint = obj.type === 'point';
+      const isElec = ['via', 'tag', 'hole', 'pad'].includes(kind);
+      const def = this.defaultColor(POINT_TOOLS.includes(kind) ? kind : (kind === 'marker' ? 'marker' : kind));
+      let html = `<div class="tp-row"><span class="tp-lab">Side</span><div class="tp-seg">` +
+        SIDES.map(s => `<button data-cside="${s}" class="${(obj.side || 'top') === s ? 'on' : ''}">${SIDE_LETTER[s]}</button>`).join('') + `</div></div>`;
+      html += `<div class="tp-row"><span class="tp-lab">Color</span><div class="tp-colors">` +
+        `<button data-ccolor="" class="tp-color ${!obj.color ? 'on' : ''}" title="Default" style="background:${def}"></button>` +
+        TP_COLORS.map(c => `<button data-ccolor="${c}" class="tp-color ${obj.color === c ? 'on' : ''}" style="background:${c}"></button>`).join('') +
+        `</div></div>`;
+      if (isPoint) {
+        const sz = obj.size || 8;
+        html += `<div class="tp-row"><span class="tp-lab">Size</span><div class="tp-seg">` +
+          [4, 8, 16].map((p, i) => `<button data-csize="${p}" class="${sz === p ? 'on' : ''}">${['S', 'M', 'L'][i]}</button>`).join('') +
+          `<input type="number" min="1" max="1000" value="${sz}" class="tp-num ctx-num"></div></div>`;
+      }
+      if (isElec) {
+        const names = this.nets ? this.nets.compute().nets.filter(n => !n.short).map(n => n.name) : [];
+        html += `<div class="tp-row"><span class="tp-lab">Net</span><select class="tp-net ctx-net">` +
+          `<option value="" ${!obj.net ? 'selected' : ''}>none</option>` +
+          names.map(n => `<option value="${n}" ${obj.net === n ? 'selected' : ''}>${n}</option>`).join('') +
+          `</select></div>`;
+      }
+      html += `<button class="btn danger small ctx-del">Delete</button>`;
+      menu.innerHTML = html;
+      menu.querySelectorAll('[data-cside]').forEach(b => b.onclick = () => { this.pushUndo(); obj.side = b.dataset.cside; menu.style.display = 'none'; this.refreshNets(); this.renderAnnotateView(); this.scheduleRender(); });
+      menu.querySelectorAll('[data-ccolor]').forEach(b => b.onclick = () => { this.pushUndo(); if (b.dataset.ccolor) obj.color = b.dataset.ccolor; else delete obj.color; menu.style.display = 'none'; this.scheduleRender(); });
+      menu.querySelectorAll('[data-csize]').forEach(b => b.onclick = () => { this.pushUndo(); obj.size = +b.dataset.csize; menu.style.display = 'none'; this.renderAnnotateView(); this.scheduleRender(); });
+      const cnum = menu.querySelector('.ctx-num');
+      if (cnum) cnum.onchange = () => { this.pushUndo(); obj.size = Math.max(1, Math.min(1000, parseInt(cnum.value, 10) || 8)); menu.style.display = 'none'; this.scheduleRender(); };
+      const cnet = menu.querySelector('.ctx-net');
+      if (cnet) cnet.onchange = () => { this.pushUndo(); if (cnet.value) obj.net = cnet.value; else delete obj.net; menu.style.display = 'none'; this.refreshNets(); this.renderAnnotateView(); this.scheduleRender(); };
+      menu.querySelector('.ctx-del').onclick = () => { this.pushUndo(); this.ann.remove(hit.kind, hit.id); this.selected = null; menu.style.display = 'none'; this.refreshNets(); this.renderAnnotateView(); this.scheduleRender(); };
+      const r = this.stage.getBoundingClientRect();
+      menu.style.left = Math.min(e.clientX, r.right - 190) + 'px';
+      menu.style.top = Math.min(e.clientY, r.bottom - 220) + 'px';
+      menu.style.display = 'block';
     },
 
     isPanGesture(e) {
@@ -608,8 +725,11 @@
           return;
         }
         this.pushUndo();
-        const s = this.ann.addPoint(wp[0], wp[1], t, this.pointSizes[t]);
+        const o = this.toolOptions[t];
+        const s = this.ann.addPoint(wp[0], wp[1], t, o.size, o.side, o.color);
+        if (o.net) s.net = o.net;
         this.selected = { kind: 'shape', id: s.id };
+        this.refreshNets();
         this.renderAnnotateView();
         this.scheduleRender();
       } else if (t === 'rect') {
@@ -628,7 +748,8 @@
           this.preview = null;
           if (w > 1e-3 || h > 1e-3) {
             this.pushUndo();
-            const s = this.ann.addRect(x, y, w, h);
+            const o = this.toolOptions.rect;
+            const s = this.ann.addRect(x, y, w, h, o.side, o.color);
             this.selected = { kind: 'shape', id: s.id };
           }
         }
@@ -639,7 +760,8 @@
         this.quadPts.push([wp[0], wp[1]]);
         if (this.quadPts.length >= 4) {
           this.pushUndo();
-          const s = this.ann.addQuad(this.quadPts.slice(0, 4));
+          const oq = this.toolOptions.quad;
+          const s = this.ann.addQuad(this.quadPts.slice(0, 4), oq.side, oq.color);
           this.selected = { kind: 'shape', id: s.id };
           this.quadPts = null;
           this.preview = null;
@@ -658,17 +780,22 @@
         if (isDbl) {
           this.finishLine();
         } else {
-          if (!this.linePts) this.linePts = [];
-          const snap = this.nets.snapToDot(sp); // land endpoints exactly on dots
-          const vp = snap || wp;
+          // Live validation: a dot under the cursor must be connectable (same
+          // side/through and same/none net). Otherwise block the click.
+          const dot = this.nets.hitDotScreen(sp, 8);
+          if (dot) {
+            const err = this.lineConnectError(dot);
+            if (err) { this.showTip(sp, err); this.hint('⚠ ' + err); this.scheduleRender(); return; }
+          }
+          if (!this.linePts) { this.linePts = []; this._lineNet = null; }
+          const vp = dot ? [dot.x, dot.y] : wp; // snap onto the (valid) dot
           this.linePts.push([vp[0], vp[1]]);
+          if (dot) { const dn = this.nets.effectiveNet(dot); if (dn && !this._lineNet) this._lineNet = dn; }
           this.preview = { type: 'line', pts: this.linePts.slice() };
           this._lastLineClick = { t: now, sp: sp.slice() };
           this.hint('Line: click to add points (snaps to dots); double-click or Enter to finish, Esc to cancel.');
           this.scheduleRender();
         }
-      } else if (t === 'net') {
-        this.nets.onCanvasDown(sp);
       } else if (t === 'marker') {
         const hit = this.ann.hitTest(sp[0], sp[1], this.cam);
         if (hit && hit.kind === 'marker') {
@@ -681,9 +808,10 @@
         }
         if (hit && hit.kind === 'shape') {
           this.pushUndo();
+          const om = this.toolOptions.marker;
           const anchor = this.ann.targetAnchor({ targetId: hit.id, x: wp[0], y: wp[1] });
           const off = 40 / this.camera.zoom;
-          const m = this.ann.addMarker(hit.id, anchor[0] + off, anchor[1] - off, 'M' + (this.ann.markers.length + 1), '');
+          const m = this.ann.addMarker(hit.id, anchor[0] + off, anchor[1] - off, 'M' + (this.ann.markers.length + 1), '', om.side, om.color);
           this.selected = { kind: 'marker', id: m.id };
           this.openPopup(m);
           this.scheduleRender();
@@ -709,13 +837,18 @@
     finishLine() {
       if (this.linePts && this.linePts.length >= 2) {
         this.pushUndo();
-        const s = this.ann.addPolyline(this.linePts);
+        const o = this.toolOptions.line;
+        const s = this.ann.addPolyline(this.linePts, o.side, o.size, o.color);
         this.selected = { kind: 'shape', id: s.id };
+        this.refreshNets(); // propagate net across the new connection + validate
+        if (s._err) this.hint('⚠ ' + s._err); // surface the error immediately, not just on hover
         this.renderAnnotateView();
       }
       this.linePts = null;
       this.preview = null;
       this._lastLineClick = null;
+      this._lineNet = null;
+      this.hideTip();
       this.scheduleRender();
     },
 
@@ -745,7 +878,7 @@
         if (Math.hypot(sp[0] - this.downScreen[0], sp[1] - this.downScreen[1]) > 3) this.moved = true;
       }
       const d = this.drag;
-      if (!d) { this.updateCursor(sp); return; }
+      if (!d) { this.updateHoverTip(sp); this.updateCursor(sp); return; }
       const wp = this.cam.screenToWorld(sp);
 
       switch (d.type) {
@@ -805,6 +938,8 @@
       if (d && d.type === 'move-ann' && d.kind === 'marker' && !this.moved) {
         this.openPopup(this.ann.getMarker(d.id));
       }
+      // Moving a dot can change which nodes a line touches → re-validate.
+      if (d && d.type === 'move-ann' && d.kind === 'shape' && this.moved) this.refreshNets();
       const layer = this.activeLayer();
       if (layer) delete layer.startMatrix;
       this.drag = null;
@@ -859,10 +994,10 @@
         if ((e.key === 'Delete' || e.key === 'Backspace') && this.selected) {
           this.pushUndo();
           this.ann.remove(this.selected.kind, this.selected.id);
-          this.selected = null; this.closePopup(); this.renderAnnotateView(); this.scheduleRender(); e.preventDefault();
+          this.selected = null; this.closePopup(); this.refreshNets(); this.renderAnnotateView(); this.scheduleRender(); e.preventDefault();
         }
         if (e.key === 'Enter' && this.linePts) { this.finishLine(); e.preventDefault(); return; }
-        if (e.key === 'Escape') { this.selected = null; this.drag = null; this.preview = null; this.rectStart = null; this.quadPts = null; this.linePts = null; this._lastLineClick = null; this.closePopup(); this.scheduleRender(); }
+        if (e.key === 'Escape') { this.selected = null; this.drag = null; this.preview = null; this.rectStart = null; this.quadPts = null; this.linePts = null; this._lastLineClick = null; this._lineNet = null; this.hideTip(); this.closePopup(); this.scheduleRender(); }
         const map = { m: 'move', s: 'scale', r: 'rotate', f: 'freeform', h: 'pan', b: 'rect', k: 'marker' };
         if (map[e.key] && !e.ctrlKey && !e.metaKey) this.setTool(map[e.key]);
       });
@@ -891,23 +1026,12 @@
       document.getElementById('loadBtn').onclick = () => this.load();
       document.getElementById('alignBtn').onclick = () => this.align.start();
       document.getElementById('footprintBtn').onclick = () => this.footprints.open();
+      const helpBtn = document.getElementById('helpBtn');
+      if (helpBtn) helpBtn.onclick = () => window.open('help.html', '_blank');
       document.getElementById('resetView').onclick = () => {
         if (this.layers.length) this.fitToLayer(this.activeLayer() || this.layers[0]);
         else { this.camera = { cx: 0, cy: 0, zoom: 1 }; }
         this.scheduleRender();
-      };
-
-      // per-kind absolute size (bound to the active point tool: via/tag/hole)
-      const sizeInput = document.getElementById('pointSize');
-      sizeInput.oninput = () => {
-        if (!POINT_TOOLS.includes(this.tool)) return;
-        const v = Math.max(1, Math.min(1000, parseInt(sizeInput.value, 10) || 8));
-        this.pointSizes[this.tool] = v;
-        // Resize the selected point too, if it is of the active kind.
-        if (this.selected && this.selected.kind === 'shape') {
-          const s = this.ann.getShape(this.selected.id);
-          if (s && s.type === 'point' && (s.kind || 'via') === this.tool) { s.size = v; this.scheduleRender(); }
-        }
       };
 
       // marker popup
@@ -916,27 +1040,84 @@
       document.getElementById('mpClose').onclick = () => this.closePopup();
     },
 
-    // ---------------- Annotate view (one summary row per kind / shape type) ------
+    // ---------------- Annotate view (three side groups with master eyes) ---------
+    kindMeta(kind) {
+      const d = Annotations.KINDS[kind];
+      if (d) return { label: d.label, color: d.color, sw: d.shape === 'rhomb' ? 'rhomb' : d.shape === 'square' ? 'square' : 'circle' };
+      if (kind === 'rect') return { label: 'Rectangles', color: Annotations.RECT_COLOR, sw: 'square' };
+      if (kind === 'quad') return { label: 'Freeform', color: Annotations.QUAD_COLOR, sw: 'square' };
+      if (kind === 'line') return { label: 'Lines', color: Annotations.LINE_COLOR, sw: 'square' };
+      if (kind === 'marker') return { label: 'Markers', color: '#59b35c', sw: 'square' };
+      return { label: kind, color: '#888', sw: 'square' };
+    },
+    toggleSide(side) {
+      this.pushUndo();
+      if (this.ann.hiddenSides.has(side)) this.ann.hiddenSides.delete(side);
+      else this.ann.hiddenSides.add(side);
+      this.renderAnnotateView();
+      this.scheduleRender();
+    },
     renderAnnotateView() {
       const box = document.getElementById('annotateView');
       if (!box) return;
+      if (!this.sideCollapsed) this.sideCollapsed = { top: true, bottom: false, through: true };
       box.innerHTML = '';
-      // Point kinds (via / tag / hole / ground / vcc)
-      for (const kind of Annotations.KIND_ORDER) {
-        const def = Annotations.KINDS[kind];
-        const swClass = def.shape === 'rhomb' ? 'rhomb' : def.shape === 'square' ? 'square' : 'circle';
-        box.appendChild(this.annotateRow(
-          kind, def.label, def.color, swClass,
-          this.ann.pointsOfKind(kind).length, 'point'));
+
+      const counts = { top: {}, bottom: {}, through: {} };
+      for (const s of this.ann.shapes) { const sd = s.side || 'top'; const k = this.ann.kindOf(s); counts[sd][k] = (counts[sd][k] || 0) + 1; }
+      for (const m of this.ann.markers) { const sd = m.side || 'top'; counts[sd].marker = (counts[sd].marker || 0) + 1; }
+      const order = [...Annotations.KIND_ORDER, 'rect', 'quad', 'line', 'marker'];
+
+      for (const side of SIDES) {
+        const total = Object.values(counts[side]).reduce((a, b) => a + b, 0);
+        const hidden = this.ann.hiddenSides.has(side);
+        const collapsed = this.sideCollapsed[side];
+
+        const group = document.createElement('div');
+        group.className = 'side-group' + (hidden ? ' off' : '');
+        const head = document.createElement('div');
+        head.className = 'side-head';
+        const tri = document.createElement('button');
+        tri.className = 'icon-btn'; tri.textContent = collapsed ? '▸' : '▾';
+        tri.onclick = (e) => { e.stopPropagation(); this.sideCollapsed[side] = !collapsed; this.renderAnnotateView(); };
+        const name = document.createElement('span');
+        name.className = 'side-name'; name.textContent = side.toUpperCase();
+        const cnt = document.createElement('span');
+        cnt.className = 'side-count'; cnt.textContent = total;
+        const eye = document.createElement('button');
+        eye.className = 'icon-btn'; eye.innerHTML = this.eyeSVG(!hidden);
+        eye.title = hidden ? 'Show ' + side : 'Hide ' + side;
+        eye.onclick = (e) => { e.stopPropagation(); this.toggleSide(side); };
+        head.append(tri, name, cnt, eye);
+        head.onclick = () => { this.sideCollapsed[side] = !collapsed; this.renderAnnotateView(); };
+        group.appendChild(head);
+
+        if (!collapsed) {
+          const list = document.createElement('div');
+          list.className = 'side-kinds';
+          let any = false;
+          for (const kind of order) {
+            const n = counts[side][kind];
+            if (!n) continue; any = true;
+            const meta = this.kindMeta(kind);
+            const row = document.createElement('div');
+            row.className = 'annotate-head';
+            const sw = document.createElement('span'); sw.className = 'swatch ' + meta.sw; sw.style.background = meta.color;
+            const knm = document.createElement('span'); knm.className = 'k-name'; knm.textContent = meta.label;
+            const kc = document.createElement('span'); kc.className = 'k-count'; kc.textContent = n;
+            const kh = this.ann.hiddenKinds.has(kind);
+            const ke = document.createElement('button'); ke.className = 'icon-btn'; ke.innerHTML = this.eyeSVG(!kh);
+            ke.title = kh ? 'Show ' + meta.label : 'Hide ' + meta.label;
+            ke.onclick = (e) => { e.stopPropagation(); this.toggleKind(kind); };
+            row.append(sw, knm, kc, ke);
+            list.appendChild(row);
+          }
+          if (!any) { const e = document.createElement('div'); e.className = 'empty'; e.textContent = '— none —'; list.appendChild(e); }
+          group.appendChild(list);
+        }
+        box.appendChild(group);
       }
-      // Rectangles, freeform quads, polylines
-      box.appendChild(this.annotateRow('rect', 'Rectangles', Annotations.RECT_COLOR, 'square',
-        this.ann.shapesOfType('rect').length, 'shape'));
-      box.appendChild(this.annotateRow('quad', 'Freeform', Annotations.QUAD_COLOR, 'square',
-        this.ann.shapesOfType('quad').length, 'shape'));
-      box.appendChild(this.annotateRow('line', 'Lines', Annotations.LINE_COLOR, 'square',
-        this.ann.shapesOfType('line').length, 'line'));
-      if (this.nets) this.nets.renderPanel(); // nets depend on dots + lines
+      if (this.nets) this.nets.renderPanel();
       this.updateReadout();
     },
 
@@ -948,9 +1129,11 @@
       return {
         ann: this.ann.serialize(),
         hiddenKinds: [...this.ann.hiddenKinds],
+        hiddenSides: [...this.ann.hiddenSides],
+        customNets: [...this.ann.customNets],
         order: this.layers.map(l => l.id),
         layers: this.layers.map(l => ({
-          id: l.id, matrix: l.matrix.slice(),
+          id: l.id, name: l.name, matrix: l.matrix.slice(),
           opacity: l.opacity, visible: l.visible, locked: !!l.locked,
           brightness: l.brightness, contrast: l.contrast,
           saturation: l.saturation, hue: l.hue, sharpen: l.sharpen,
@@ -965,10 +1148,13 @@
     applySnapshot(s) {
       this.ann.load(s.ann);
       this.ann.hiddenKinds = new Set(s.hiddenKinds || []);
+      this.ann.hiddenSides = new Set(s.hiddenSides || []);
+      this.ann.customNets = new Set(s.customNets || []);
       const byId = new Map(this.layers.map(l => [l.id, l]));
       for (const ls of s.layers) {
         const l = byId.get(ls.id);
         if (!l) continue;
+        if (ls.name != null) l.name = ls.name;
         l.matrix = ls.matrix.slice();
         l.opacity = ls.opacity; l.visible = ls.visible; l.locked = !!ls.locked;
         l.brightness = ls.brightness; l.contrast = ls.contrast;
@@ -977,6 +1163,7 @@
       const pos = id => { const i = s.order.indexOf(id); return i < 0 ? 1e9 : i; };
       this.layers.sort((a, b) => pos(a.id) - pos(b.id));
       this.selected = null;
+      this.refreshNets();
       this.renderPanel();
       this.renderAnnotateView();
       this.scheduleRender();
@@ -992,6 +1179,50 @@
       this.undoStack.push(this.snapshot());
       this.applySnapshot(this.redoStack.pop());
       this.hint('Redo.');
+    },
+
+    // Re-run net propagation + line validation after a connectivity change.
+    refreshNets() { if (this.nets) this.nets.propagate(); },
+
+    showTip(sp, msg) {
+      const tip = document.getElementById('annTooltip');
+      if (!tip) return;
+      tip.textContent = '⚠ ' + msg;
+      const r = this.overlay.getBoundingClientRect();
+      tip.style.left = (r.left + sp[0] + 14) + 'px';
+      tip.style.top = (r.top + sp[1] + 14) + 'px';
+      tip.style.display = 'block';
+    },
+    hideTip() { const t = document.getElementById('annTooltip'); if (t) t.style.display = 'none'; },
+
+    // Why a line cannot connect to `dot` (null if it can). Allowed: same side (or
+    // through) AND same net (or one side has no net).
+    lineConnectError(dot) {
+      const side = this.toolOptions.line.side;
+      if (!this.nets.sameSide(dot, side)) {
+        return 'Other layer — this node is on the ' + (dot.side || 'top') + ' side. Connect a same-side (or through) node, or press Esc.';
+      }
+      const ctxNet = this._lineNet || null;
+      const dotNet = this.nets.effectiveNet(dot);
+      if (ctxNet && dotNet && ctxNet !== dotNet) {
+        return 'Different net — this node is ' + dotNet + ', the wire is ' + ctxNet + '. Rename the net or press Esc.';
+      }
+      return null;
+    },
+
+    // Hover feedback: while drawing a line show why an endpoint is blocked;
+    // otherwise show why a grayed line is invalid.
+    updateHoverTip(sp) {
+      if (this.linePts && this.tool === 'line') {
+        const dot = this.nets.hitDotScreen(sp, 8);
+        const err = dot ? this.lineConnectError(dot) : null;
+        if (err) this.showTip(sp, err); else this.hideTip();
+        return;
+      }
+      const hit = this.ann.hitTest(sp[0], sp[1], this.cam);
+      let msg = null;
+      if (hit && hit.kind === 'shape') { const s = this.ann.getShape(hit.id); if (s && s.type === 'line' && s._err) msg = s._err; }
+      if (msg) this.showTip(sp, msg); else this.hideTip();
     },
 
     // Bottom-right corner readout in the domain's own vocabulary.
@@ -1053,13 +1284,14 @@
         b.classList.toggle('active', b.dataset.tool === tool);
       });
       document.getElementById('flipActions').style.display = tool === 'flip' ? 'flex' : 'none';
-      if (tool === 'net') { this.nets.colorByNet = true; this.nets.renderPanel(); }
-      const isPoint = POINT_TOOLS.includes(tool);
-      document.getElementById('pointOptions').classList.toggle('open', isPoint);
-      if (isPoint) {
-        document.getElementById('pointSize').value = this.pointSizes[tool];
-        document.getElementById('pointSizeKind').textContent = Annotations.KINDS[tool].label;
+      // Tool-options popover for annotate tools; re-clicking the active tool toggles it.
+      if (ANNOTATE_TOOLS.includes(tool)) {
+        if (this.popoverOpen && this.popoverTool === tool) this.closePopover();
+        else this.openPopover(tool);
+      } else {
+        this.closePopover();
       }
+      this.updateToolIndicators();
       this.updateCursor();
       this.scheduleRender();
       const help = {
@@ -1085,6 +1317,121 @@
     },
 
     hint(msg) { if (this.hintEl) this.hintEl.textContent = msg; },
+
+    // Drag the splitters to resize the left tool rail / right panel.
+    bindSplitters() {
+      const setup = (id, target, edge) => {
+        const el = document.getElementById(id);
+        if (!el || !target) return;
+        el.addEventListener('pointerdown', (e) => {
+          e.preventDefault();
+          const startX = e.clientX;
+          const startW = target.getBoundingClientRect().width;
+          const move = (ev) => {
+            const dx = ev.clientX - startX;
+            let w = edge === 'left' ? startW + dx : startW - dx;
+            w = Math.max(90, Math.min(600, w));
+            target.style.width = w + 'px';
+            this.resize();
+          };
+          const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); };
+          window.addEventListener('pointermove', move);
+          window.addEventListener('pointerup', up);
+        });
+      };
+      setup('splitL', document.getElementById('tools'), 'left');
+      setup('splitR', document.getElementById('panel'), 'right');
+    },
+
+    // Open / closed eye icon (inline SVG, uses currentColor).
+    eyeSVG(open) {
+      if (open) {
+        return '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3">' +
+          '<path d="M1 8s2.5-4.5 7-4.5S15 8 15 8s-2.5 4.5-7 4.5S1 8 1 8Z"/>' +
+          '<circle cx="8" cy="8" r="1.7" fill="currentColor" stroke="none"/></svg>';
+      }
+      return '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3">' +
+        '<path d="M1.5 6s2.5 4 6.5 4 6.5-4 6.5-4"/><path d="M3.5 9 2.5 11M8 10v2.2M12.5 9l1 2"/></svg>';
+    },
+
+    // ---------------- tool-options popover ----------------
+    defaultColor(tool) {
+      if (POINT_TOOLS.includes(tool)) return Annotations.KINDS[tool].color;
+      if (tool === 'rect') return Annotations.RECT_COLOR;
+      if (tool === 'quad') return Annotations.QUAD_COLOR;
+      if (tool === 'line') return Annotations.LINE_COLOR;
+      return '#59b35c'; // marker
+    },
+    openPopover(tool) {
+      const pop = document.getElementById('toolPopover');
+      this.popoverTool = tool;
+      this.popoverOpen = true;
+      this.buildPopover(tool);
+      const btn = document.querySelector(`[data-tool="${tool}"]`);
+      if (btn) {
+        const r = btn.getBoundingClientRect();
+        pop.style.left = Math.round(r.right + 6) + 'px';
+        pop.style.top = Math.round(Math.min(r.top, window.innerHeight - 230)) + 'px';
+      }
+      pop.style.display = 'block';
+    },
+    closePopover() {
+      this.popoverOpen = false; this.popoverTool = null;
+      const pop = document.getElementById('toolPopover');
+      if (pop) pop.style.display = 'none';
+    },
+    buildPopover(tool) {
+      const pop = document.getElementById('toolPopover');
+      const o = this.toolOptions[tool];
+      const hasSize = POINT_TOOLS.includes(tool) || tool === 'line';
+      const label = POINT_TOOLS.includes(tool) ? Annotations.KINDS[tool].label : (tool[0].toUpperCase() + tool.slice(1));
+      let html = `<div class="tp-title">${label} options</div>`;
+      html += `<div class="tp-row"><span class="tp-lab">Side</span><div class="tp-seg">` +
+        SIDES.map(s => `<button data-side="${s}" class="${o.side === s ? 'on' : ''}">${SIDE_LETTER[s]}</button>`).join('') + `</div></div>`;
+      if (hasSize) {
+        const presets = tool === 'line' ? [1, 2, 4] : [4, 8, 16];
+        html += `<div class="tp-row"><span class="tp-lab">Size</span><div class="tp-seg">` +
+          presets.map((p, i) => `<button data-size="${p}" class="${o.size === p ? 'on' : ''}">${['S', 'M', 'L'][i]}</button>`).join('') +
+          `<input type="number" min="1" max="1000" value="${o.size}" class="tp-num"></div></div>`;
+      }
+      const def = this.defaultColor(tool);
+      html += `<div class="tp-row"><span class="tp-lab">Color</span><div class="tp-colors">` +
+        `<button data-color="" class="tp-color ${!o.color ? 'on' : ''}" title="Default" style="background:${def}"></button>` +
+        TP_COLORS.map(c => `<button data-color="${c}" class="tp-color ${o.color === c ? 'on' : ''}" style="background:${c}"></button>`).join('') +
+        `</div></div>`;
+      // Net assignment — net-capable dots (holes can carry a net; ground/vcc fixed).
+      if (['via', 'tag', 'hole', 'pad'].includes(tool)) {
+        const names = this.nets ? this.nets.compute().nets.filter(n => !n.short).map(n => n.name) : [];
+        html += `<div class="tp-row"><span class="tp-lab">Net</span><select class="tp-net">` +
+          `<option value="" ${!o.net ? 'selected' : ''}>none</option>` +
+          names.map(n => `<option value="${n}" ${o.net === n ? 'selected' : ''}>${n}</option>`).join('') +
+          `</select></div>`;
+      }
+      pop.innerHTML = html;
+      pop.querySelectorAll('[data-side]').forEach(b => b.onclick = () => { o.side = b.dataset.side; this.buildPopover(tool); this.updateToolIndicators(); });
+      pop.querySelectorAll('[data-size]').forEach(b => b.onclick = () => { o.size = +b.dataset.size; this.buildPopover(tool); this.updateToolIndicators(); });
+      const num = pop.querySelector('.tp-num');
+      if (num) num.oninput = () => { o.size = Math.max(1, Math.min(1000, parseInt(num.value, 10) || 1)); this.updateToolIndicators(); };
+      pop.querySelectorAll('[data-color]').forEach(b => b.onclick = () => { o.color = b.dataset.color || null; this.buildPopover(tool); this.updateToolIndicators(); });
+      const netSel = pop.querySelector('.tp-net');
+      if (netSel) netSel.onchange = () => { o.net = netSel.value || null; };
+    },
+    // Small side letter + colour dot on each annotate tool button.
+    updateToolIndicators() {
+      for (const t of ANNOTATE_TOOLS) {
+        const btn = document.querySelector(`[data-tool="${t}"]`);
+        if (!btn) continue;
+        let ind = btn.querySelector('.tool-ind');
+        if (!ind) { ind = document.createElement('span'); ind.className = 'tool-ind'; btn.appendChild(ind); }
+        const o = this.toolOptions[t];
+        const col = o.color || this.defaultColor(t);
+        ind.textContent = SIDE_LETTER[o.side];
+        ind.style.color = col;
+        // Reflect the chosen colour on the button's own kind swatch too.
+        const sw = btn.querySelector('.swatch');
+        if (sw) sw.style.background = col;
+      }
+    },
 
     // ---------------- marker popup ----------------
     openPopup(marker) {
@@ -1117,8 +1464,8 @@
     // ---------------- persistence ----------------
     projectData() {
       return {
-        version: 1,
-        app: 'layered-image-annotator',
+        version: 2,
+        app: 'pcbspy',
         camera: { cx: this.camera.cx, cy: this.camera.cy, zoom: this.camera.zoom },
         layers: this.layers.map(l => ({
           id: l.id,
@@ -1138,11 +1485,19 @@
       };
     },
 
+    // pcbspy_data_YYYYMMDD_HHMMSS.zip
+    saveFilename() {
+      const d = new Date();
+      const p = (n) => String(n).padStart(2, '0');
+      const ts = `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+      return `pcbspy_data_${ts}.zip`;
+    },
+
     async save() {
       if (!this.layers.length && !this.ann.shapes.length) { this.hint('Nothing to save yet.'); return; }
       this.hint('Saving…');
       try {
-        const res = await Persistence.save(this.projectData(), this.blobs, 'annotation-project.zip');
+        const res = await Persistence.save(this.projectData(), this.blobs, this.saveFilename());
         if (res.aborted) { this.hint('Save cancelled.'); return; }
         this.hint(res.method === 'download' ? 'Saved (downloaded ' + res.name + ').' : 'Saved to ' + res.name + '.');
       } catch (e) {
@@ -1195,6 +1550,7 @@
       }
       this.activeId = this.layers.length ? this.layers[this.layers.length - 1].id : null;
       this.ann.load(project.annotations);
+      this.refreshNets();
       if (project.camera) this.camera = { cx: project.camera.cx || 0, cy: project.camera.cy || 0, zoom: project.camera.zoom || 1 };
       this.renderPanel();
       this.renderAnnotateView();
