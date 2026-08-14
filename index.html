@@ -3,166 +3,297 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>PCBSpy</title>
+  <title>PCBSpy — In-browser PCB reverse engineering &amp; net tracing tool</title>
+
+  <!-- SEO -->
+  <meta name="description" content="PCBSpy is a free, in-browser tool for hardware reverse engineering: stack and align PCB photos, annotate pads, vias and holes, trace signals into nets, and overlay KiCad footprints. Nothing is uploaded — everything runs locally.">
+  <meta name="keywords" content="hardware reverse engineering, PCB reverse engineering, signal tracing, PCB tracing, net tracing, retracing, board retracing, PCB layer alignment, KiCad footprints, pad and via annotation, PCB bring-up, schematic recovery, board photo overlay">
+  <meta name="author" content="PCBSpy">
+  <meta name="robots" content="index, follow">
+  <link rel="canonical" href="/">
+
+  <!-- Open Graph -->
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="PCBSpy — In-browser PCB reverse engineering &amp; net tracing">
+  <meta property="og:description" content="Stack and align PCB photos, annotate pads/vias/holes, trace signals into nets, overlay KiCad footprints — all locally in your browser.">
+  <meta property="og:image" content="galery/annotation-tracing.svg">
+  <meta property="og:url" content="/">
+
+  <!-- Twitter -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="PCBSpy — In-browser PCB reverse engineering &amp; net tracing">
+  <meta name="twitter:description" content="A static, local-first tool for hardware reverse engineering: PCB tracing, signal tracing, layer alignment and KiCad footprint overlay.">
+  <meta name="twitter:image" content="galery/annotation-tracing.svg">
+
+  <!-- Structured data -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "PCBSpy",
+    "applicationCategory": "DesignApplication",
+    "operatingSystem": "Web browser",
+    "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+    "description": "In-browser tool for hardware reverse engineering: PCB tracing, signal tracing, layer alignment, pad/via/hole annotation, net tracing and KiCad footprint overlay. Runs entirely locally.",
+    "url": "/",
+    "keywords": "hardware reverse engineering, signal tracing, pcb tracing, retracing, net tracing"
+  }
+  </script>
+
+  <!-- Same design system as the app -->
   <link rel="stylesheet" href="css/style.css">
+  <style>
+    /* ---- Landing-only layout; palette, fonts & buttons come from style.css ---- */
+    html, body { height: auto; overflow: auto; }        /* app shell locks scroll; unlock it here */
+    body { line-height: 1.6; }
+    a { color: var(--hazard); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .lp-wrap { max-width: 1040px; margin: 0 auto; padding: 0 24px; }
+
+    /* Titleblock header — mirrors the app #topbar */
+    .lp-top {
+      position: sticky; top: 0; z-index: 10;
+      display: flex; align-items: center; gap: 12px;
+      padding: 8px 24px; background: var(--paper-2);
+      border-bottom: 1px solid var(--ink);
+    }
+    .lp-top .brand { margin-right: auto; }
+    .lp-top .lp-nav { display: flex; align-items: center; gap: 14px; }
+    .lp-top .lp-nav a.navlink {
+      color: var(--ink-2); font-size: 11px; text-transform: uppercase; letter-spacing: .1em;
+    }
+    .lp-top .lp-nav a.navlink:hover { color: var(--ink); text-decoration: none; }
+
+    section { padding: 56px 0; border-bottom: 1px solid var(--grid-line); }
+    .lp-eyebrow {
+      display: inline-block; font-size: 11px; letter-spacing: .16em; text-transform: uppercase;
+      color: var(--hazard); border: 1px solid var(--hazard); padding: 4px 12px; margin-bottom: 22px;
+    }
+
+    /* Hero */
+    .hero { padding: 72px 0 56px; }
+    .hero h1 {
+      font-size: clamp(30px, 5vw, 48px); line-height: 1.08; margin: 0 0 20px;
+      letter-spacing: .02em;
+    }
+    .hero h1 .hz { color: var(--hazard); }
+    .hero p.lead {
+      font-size: clamp(15px, 2vw, 18px); color: var(--ink-2); max-width: 680px; margin: 0 0 32px;
+      text-transform: none; letter-spacing: normal;
+    }
+    .cta { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+    .btn.xl { font-size: 14px; padding: 12px 22px; }
+    .cta .cta-note {
+      width: 100%; margin-top: 14px; font-size: 12px; color: var(--ink-3);
+      text-transform: none; letter-spacing: normal;
+    }
+
+    h2.lp-h { font-size: 20px; margin: 0 0 10px; }
+    .lp-sub { color: var(--ink-2); max-width: 640px; margin: 0 0 36px; text-transform: none; letter-spacing: normal; }
+
+    /* Capability grid */
+    .caps { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
+    .cap { border: 1px solid var(--ink); background: var(--paper); padding: 18px; }
+    .cap .ico { font-size: 20px; margin-bottom: 10px; }
+    .cap h3 { font-size: 13px; margin: 0 0 8px; }
+    .cap p { margin: 0; color: var(--ink-2); font-size: 13px; text-transform: none; letter-spacing: normal; }
+
+    /* Demos / gallery */
+    .demos { display: flex; flex-direction: column; gap: 48px; }
+    .demo { display: grid; grid-template-columns: 1fr 1fr; gap: 36px; align-items: center; }
+    .demo:nth-child(even) .demo-text { order: 2; }
+    .demo img { width: 100%; height: auto; display: block; border: 1px solid var(--ink); background: var(--paper); }
+    .demo .tag {
+      display: inline-block; font-size: 10px; letter-spacing: .14em; text-transform: uppercase;
+      color: var(--hazard); margin-bottom: 8px;
+    }
+    .demo h3 { font-size: 18px; margin: 0 0 12px; }
+    .demo p { color: var(--ink-2); margin: 0 0 14px; text-transform: none; letter-spacing: normal; }
+    .demo ul { margin: 0; padding-left: 18px; color: var(--ink-2); text-transform: none; letter-spacing: normal; }
+    .demo ul li { margin: 4px 0; font-size: 13px; }
+
+    .final { text-align: center; }
+    .final .cta { justify-content: center; }
+
+    footer.lp-foot {
+      padding: 28px 0 40px; color: var(--ink-3); font-size: 11px;
+      text-transform: uppercase; letter-spacing: .08em; border-bottom: none;
+    }
+    footer.lp-foot .frow { display: flex; gap: 18px; flex-wrap: wrap; align-items: center; }
+    footer.lp-foot .grow { flex: 1; }
+
+    @media (max-width: 720px) {
+      .demo { grid-template-columns: 1fr; gap: 18px; }
+      .demo:nth-child(even) .demo-text { order: 0; }
+      .lp-nav .navlink.hide-sm { display: none; }
+    }
+  </style>
 </head>
 <body>
-  <div id="app">
-    <!-- Top line: import / project -->
-    <header id="topbar">
-      <div class="brand">
-        <span class="tb-name">PCBSpy</span>
-        <span class="tb-sub">image layers · footprints · net tracing</span>
+  <!-- ==================== TITLEBLOCK ==================== -->
+  <header class="lp-top">
+    <div class="brand">
+      <span class="tb-name">PCBSpy</span>
+      <span class="tb-sub">image layers · footprints · net tracing</span>
+    </div>
+    <nav class="lp-nav">
+      <a class="navlink hide-sm" href="#capabilities">Capabilities</a>
+      <a class="navlink hide-sm" href="#demos">See it</a>
+      <a class="navlink" href="help.html">Help</a>
+      <!-- TODO: replace # with your GitHub repo URL -->
+      <a class="navlink" href="#" rel="noopener">GitHub</a>
+      <a class="btn primary" href="app.html">Try it out</a>
+    </nav>
+  </header>
+
+  <!-- ==================== HERO ==================== -->
+  <main>
+    <section class="hero">
+      <div class="lp-wrap">
+        <span class="lp-eyebrow">Local-first · nothing uploaded</span>
+        <h1>Reverse-engineer a PCB<br>from <span class="hz">photographs</span></h1>
+        <p class="lead">
+          PCBSpy is a free, in-browser workbench for <strong>hardware reverse engineering</strong>.
+          Stack and align board scans, annotate pads, vias and holes, trace signals into nets,
+          and overlay KiCad footprints — all running locally in your browser.
+        </p>
+        <div class="cta">
+          <a class="btn primary xl" href="app.html">Try it out →</a>
+          <!-- TODO: replace # with your GitHub repo URL -->
+          <a class="btn xl" href="#" rel="noopener">View on GitHub</a>
+          <span class="cta-note">No install, no account, no upload — your images never leave the browser.</span>
+        </div>
       </div>
-      <label class="btn primary" for="fileInput">＋ Add Images</label>
-      <input id="fileInput" type="file" accept="image/*" multiple hidden>
-      <button class="btn" id="footprintBtn" title="Place a KiCad footprint as a layer">▦ Add Footprint</button>
-      <span class="spacer"></span>
-      <button class="btn" id="alignBtn" title="Experimental: align two layers by landmarks">⧉ Align layers</button>
-      <button class="btn ghost" id="loadBtn" title="Open a saved .zip project">Open project…</button>
-      <button class="btn" id="saveBtn" title="Save project as .zip">💾 Save</button>
-      <button class="btn ghost" id="helpBtn" title="Open the help page">? Help</button>
-    </header>
+    </section>
 
-    <div id="body">
-      <!-- Left: tools -->
-      <nav id="tools">
-        <div class="tool-group">
-          <span class="tool-label">View</span>
-          <button class="btn tool" data-tool="pan" title="Pan / zoom (H). Space+drag anywhere.">✋ Pan</button>
-          <button class="btn" id="resetView" title="Fit active layer to view">⤢ Fit</button>
-        </div>
-
-        <div class="tool-group">
-          <span class="tool-label">Layer</span>
-          <button class="btn tool" data-tool="move" title="Move (M)">✥ Move</button>
-          <button class="btn tool" data-tool="scale" title="Scale (S)">⤢ Scale</button>
-          <button class="btn tool" data-tool="rotate" title="Rotate (R)">⟳ Rotate</button>
-          <button class="btn tool" data-tool="flip" title="Flip">⇄ Flip</button>
-          <div id="flipActions" class="flip-actions">
-            <button class="btn small" id="flipH" title="Flip horizontally">⇄ Horizontal</button>
-            <button class="btn small" id="flipV" title="Flip vertically">⇅ Vertical</button>
+    <!-- ==================== CAPABILITIES ==================== -->
+    <section id="capabilities">
+      <div class="lp-wrap">
+        <h2 class="lp-h">What it does</h2>
+        <p class="lp-sub">
+          A focused toolkit for <strong>PCB tracing</strong> and <strong>signal tracing</strong> —
+          turning board photos into documented, retraceable electrical structure.
+        </p>
+        <div class="caps">
+          <div class="cap">
+            <div class="ico">≣</div>
+            <h3>Layered board scans</h3>
+            <p>Import top/bottom photos as non-destructive layers you can move, scale, rotate, flip and freeform-warp for perspective correction.</p>
           </div>
-          <button class="btn tool" data-tool="freeform" title="Freeform / perspective (F)">◱ Freeform</button>
-        </div>
-
-        <div class="tool-group">
-          <span class="tool-label">Annotate</span>
-          <button class="btn tool" data-tool="via" title="Via — green circle"><span class="swatch circle" style="background:#3ddc84"></span> Via</button>
-          <button class="btn tool" data-tool="tag" title="Tag — yellow rhomb"><span class="swatch rhomb" style="background:#ffd166"></span> Tag</button>
-          <button class="btn tool" data-tool="hole" title="Hole — blue circle"><span class="swatch circle" style="background:#4a90d9"></span> Hole</button>
-          <button class="btn tool" data-tool="pad" title="Pad — silver square (component solder pad)"><span class="swatch square" style="background:#aab2bd"></span> Pad</button>
-          <button class="btn tool" data-tool="ground" title="Ground — black circle"><span class="swatch circle" style="background:#000;border-color:#888"></span> Ground</button>
-          <button class="btn tool" data-tool="vcc" title="Vcc — bright red circle"><span class="swatch circle" style="background:#ff1e1e"></span> Vcc</button>
-          <div id="pointOptions" class="sub-options">
-            <label class="size-row"><span id="pointSizeKind">Via</span> size (px on image)
-              <input id="pointSize" type="number" min="1" max="1000" step="1" value="8">
-            </label>
+          <div class="cap">
+            <div class="ico">⧉</div>
+            <h3>Landmark alignment</h3>
+            <p>Co-register top and bottom scans with a least-squares homography fit from matching feature pairs.</p>
           </div>
-          <button class="btn tool" data-tool="rect" title="Rectangle (B)">▭ Rect</button>
-          <button class="btn tool" data-tool="quad" title="Freeform quadrilateral — click 4 corners">▰ Freeform</button>
-          <button class="btn tool" data-tool="line" title="Polyline — click points, double-click to finish">⟋ Line</button>
-          <button class="btn tool" data-tool="marker" title="Marker (K)">⚑ Marker</button>
-        </div>
-      </nav>
-
-      <div id="splitL" class="splitter" title="Drag to resize"><span class="grip"></span></div>
-
-      <!-- Center: canvas stage -->
-      <div id="stage">
-        <canvas id="glCanvas"></canvas>
-        <canvas id="overlay"></canvas>
-
-        <!-- Experimental landmark-alignment wizard -->
-        <div id="alignPanel" class="align-panel"></div>
-
-        <!-- Right-click annotation context menu -->
-        <div id="ctxMenu" class="ctx-menu"></div>
-
-        <!-- Marker editor popup -->
-        <div id="markerPopup" class="popup">
-          <label>Short name (always visible)
-            <input id="mpShort" type="text" maxlength="24" placeholder="e.g. R1">
-          </label>
-          <label>Description (shown on click)
-            <textarea id="mpDesc" rows="4" placeholder="Longer notes…"></textarea>
-          </label>
-          <div class="popup-actions">
-            <button class="btn danger small" id="mpDelete">Delete</button>
-            <span class="spacer"></span>
-            <button class="btn small" id="mpClose">Close</button>
-            <button class="btn primary small" id="mpSave">Save</button>
+          <div class="cap">
+            <div class="ico">◎</div>
+            <h3>Electrical annotation</h3>
+            <p>Drop pads, vias, holes, ground and Vcc points — each carrying a board side (top, bottom, or through).</p>
+          </div>
+          <div class="cap">
+            <div class="ico">⟋</div>
+            <h3>Net tracing</h3>
+            <p>Wire dots into nets with a snapping line tool. Through-vias bridge sides; guard rails block cross-net mistakes.</p>
+          </div>
+          <div class="cap">
+            <div class="ico">▦</div>
+            <h3>KiCad footprints</h3>
+            <p>Overlay simplified KiCad footprints as adjustable layers to match components against the board.</p>
+          </div>
+          <div class="cap">
+            <div class="ico">💾</div>
+            <h3>Save as a .zip</h3>
+            <p>The whole project — images, layers, annotations and nets — saves and reloads as a single portable zip.</p>
           </div>
         </div>
       </div>
+    </section>
 
-      <div id="splitR" class="splitter" title="Drag to resize"><span class="grip"></span></div>
+    <!-- ==================== DEMOS / GALLERY ==================== -->
+    <section id="demos">
+      <div class="lp-wrap">
+        <h2 class="lp-h">See it in action</h2>
+        <p class="lp-sub">Three core workflows for retracing a board from images.</p>
 
-      <!-- Right: layers + opacity -->
-      <aside id="panel">
-        <section class="panel-section">
-          <h2>Layers</h2>
-          <p class="panel-hint">Top of the list is the front-most layer.</p>
-          <div id="layerList"></div>
-        </section>
+        <div class="demos">
+          <article class="demo">
+            <div class="demo-text">
+              <span class="tag">Layer alignment</span>
+              <h3>Align top &amp; bottom</h3>
+              <p>Place matching landmark pairs across two scans and compute a homography that snaps both sides into the same world coordinates.</p>
+              <ul>
+                <li>Pick a fixed and a moving layer</li>
+                <li>Place 5–8 feature pairs</li>
+                <li>Least-squares co-registration</li>
+              </ul>
+            </div>
+            <a href="app.html" aria-label="Open PCBSpy — layer alignment">
+              <img src="galery/layer-alignment.svg" width="800" height="500"
+                   alt="PCBSpy layer alignment: two PCB scans overlaid and co-registered by numbered landmark points">
+            </a>
+          </article>
 
-        <section class="panel-section">
-          <h2>Annotate</h2>
-          <div id="annotateView"></div>
-        </section>
+          <article class="demo">
+            <div class="demo-text">
+              <span class="tag">Annotation &amp; tracing</span>
+              <h3>Annotate &amp; trace nets</h3>
+              <p>Mark pads, vias, holes and power points, then wire them into named nets with a snapping line tool — the heart of signal tracing.</p>
+              <ul>
+                <li>Side-aware pads, vias &amp; holes</li>
+                <li>Snapping polyline net tool</li>
+                <li>Color-by-net &amp; hover highlight</li>
+              </ul>
+            </div>
+            <a href="app.html" aria-label="Open PCBSpy — annotation and net tracing">
+              <img src="galery/annotation-tracing.svg" width="800" height="500"
+                   alt="PCBSpy annotation and net tracing: pads, vias and holes wired into electrical nets across a PCB photo">
+            </a>
+          </article>
 
-        <section class="panel-section">
-          <h2>Nets</h2>
-          <div id="netsView"></div>
-        </section>
-      </aside>
-    </div>
-
-    <footer id="statusbar">
-      <span id="hint"></span>
-      <span id="readout"></span>
-    </footer>
-
-    <!-- Tool-options popover (side / size / color / net) -->
-    <div id="toolPopover" class="tool-popover"></div>
-
-    <!-- Net-error tooltip (mismatch / cross-side) -->
-    <div id="annTooltip"></div>
-
-    <!-- Themed name / rename dialog -->
-    <div id="nameModal" class="name-modal">
-      <div class="name-card">
-        <div class="name-title" id="nameModalTitle">Name</div>
-        <input id="nameModalInput" class="nets-input" type="text" autocomplete="off">
-        <div class="name-actions">
-          <button class="btn small" id="nameModalCancel">Cancel</button>
-          <button class="btn small primary" id="nameModalOk">OK</button>
+          <article class="demo">
+            <div class="demo-text">
+              <span class="tag">Layer visual adjustment</span>
+              <h3>Enhance the scan</h3>
+              <p>Push brightness, contrast, saturation, hue and sharpening per layer to pull faint traces out of a noisy board photo.</p>
+              <ul>
+                <li>Per-layer, non-destructive</li>
+                <li>Opacity blending between sides</li>
+                <li>Reset any time</li>
+              </ul>
+            </div>
+            <a href="app.html" aria-label="Open PCBSpy — layer visual adjustment">
+              <img src="galery/layer-adjustment.svg" width="800" height="500"
+                   alt="PCBSpy layer visual adjustment: brightness, contrast and saturation sliders enhancing a PCB scan">
+            </a>
+          </article>
         </div>
       </div>
-    </div>
+    </section>
 
-    <!-- Footprint picker -->
-    <div id="footprintModal" class="fp-modal">
-      <div class="fp-card-panel">
-        <div class="fp-head">
-          <h3>Add Footprint</h3>
-          <button class="btn ghost small" id="fpClose">✕</button>
+    <!-- ==================== FINAL CTA ==================== -->
+    <section class="final">
+      <div class="lp-wrap">
+        <h2 class="lp-h">Start retracing a board</h2>
+        <p class="lp-sub" style="margin-left:auto;margin-right:auto;">Open the tool and load the built-in demo, or drop in your own board photos.</p>
+        <div class="cta">
+          <a class="btn primary xl" href="app.html">Try it out →</a>
+          <!-- TODO: replace # with your GitHub repo URL -->
+          <a class="btn xl" href="#" rel="noopener">View on GitHub</a>
         </div>
-        <p class="panel-hint">Simplified KiCad footprints, placed as a layer you can scale, rotate, freeform-align and adjust like an image. Add more by dropping <code>.kicad_mod</code> files in <code>/footprints</code> and listing them in <code>index.json</code>.</p>
-        <div id="fpItems" class="fp-items"></div>
       </div>
-    </div>
-  </div>
+    </section>
+  </main>
 
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-  <script src="js/mat3.js"></script>
-  <script src="js/renderer.js"></script>
-  <script src="js/annotations.js"></script>
-  <script src="js/persistence.js"></script>
-  <script src="js/align.js"></script>
-  <script src="js/nets.js"></script>
-  <script src="js/footprints-data.js"></script>
-  <script src="js/footprints.js"></script>
-  <script src="js/app.js"></script>
+  <!-- ==================== FOOTER ==================== -->
+  <footer class="lp-foot">
+    <div class="lp-wrap frow">
+      <span>PCBSpy — in-browser PCB reverse engineering &amp; net tracing</span>
+      <span class="grow"></span>
+      <a href="app.html">Open app</a>
+      <a href="help.html">Help</a>
+      <!-- TODO: replace # with your GitHub repo URL -->
+      <a href="#" rel="noopener">GitHub</a>
+    </div>
+  </footer>
 </body>
 </html>

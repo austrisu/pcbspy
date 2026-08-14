@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PCBSpy — BOM</title>
+  <link rel="stylesheet" href="css/style.css">
+  <style>
+    /* ---- BOM-specific layout; palette/fonts/buttons come from style.css ---- */
+    html, body { height: 100%; margin: 0; overflow: hidden; }
+    #bom { display: flex; flex-direction: column; height: 100vh; }
+
+    /* topbar mirrors the app */
+    #topbar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; }
+    #topbar .brand { margin-right: 8px; }
+    #topbar .spacer { flex: 1; }
+
+    #bom-body { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+
+    /* ---- editor card (closeup | thumbs | form) ---- */
+    .editor {
+      display: grid; grid-template-columns: 320px 108px 1fr; gap: 12px;
+      padding: 12px; border-bottom: 1px solid var(--ink);
+    }
+    .viewport-wrap { position: relative; border: 1px solid var(--ink); background: #DED9CC; height: 220px; }
+    #viewport { width: 100%; height: 100%; display: block; cursor: crosshair; }
+    #zoomLabel {
+      position: absolute; right: 6px; bottom: 6px; font-size: 10px; letter-spacing: .06em;
+      background: var(--paper); border: 1px solid var(--ink); padding: 1px 5px; color: var(--ink-2);
+    }
+    #placeHint {
+      position: absolute; left: 6px; top: 6px; right: 6px; font-size: 10px; color: var(--ink);
+      background: rgba(240,237,228,.9); border: 1px solid var(--ink); padding: 4px 6px; line-height: 1.4;
+    }
+
+    .thumbs { display: flex; flex-direction: column; gap: 6px; overflow-y: auto; height: 220px; padding-right: 2px; }
+    .thumb { position: relative; padding: 0; border: 1px solid var(--ink); background: var(--paper-2); cursor: pointer; line-height: 0; }
+    .thumb canvas { width: 100%; height: auto; display: block; }
+    .thumb.on { outline: 2px solid var(--hazard); outline-offset: -1px; }
+    .thumb-star { position: absolute; top: 2px; right: 3px; color: var(--hazard); font-size: 12px; line-height: 1; }
+    .thumb-empty { color: var(--ink-3); font-size: 10px; text-align: center; padding: 12px 4px; line-height: 1.5; }
+
+    .form { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+    .form .editor-title { font-size: 13px; text-transform: uppercase; letter-spacing: .12em; color: var(--ink); }
+    .frow { display: flex; align-items: center; gap: 8px; }
+    .frow > label { font-size: 10px; text-transform: uppercase; letter-spacing: .1em; color: var(--ink-2); width: 40px; flex-shrink: 0; }
+    .frow > input, .frow > select, .frow > textarea {
+      flex: 1; min-width: 0; font: inherit; padding: 5px 7px;
+      background: var(--paper); border: 1px solid var(--ink); color: var(--ink);
+    }
+    .form textarea { resize: vertical; min-height: 44px; }
+    .form-actions { display: flex; gap: 8px; align-items: center; margin-top: 2px; }
+    .form-actions .spacer { flex: 1; }
+
+    /* ---- BOM table ---- */
+    .table-head { display: flex; align-items: center; gap: 10px; padding: 8px 12px 4px; }
+    .table-head h2 { margin: 0; font-size: 13px; }
+    .table-head #bomCount { color: var(--ink-3); font-size: 11px; }
+    .table-scroll { flex: 1; overflow-y: auto; min-height: 0; padding: 0 12px 12px; }
+    table.bom { width: 100%; border-collapse: collapse; font-size: 13px; }
+    table.bom th, table.bom td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--grid-line); }
+    table.bom th {
+      position: sticky; top: 0; background: var(--paper-2); border-bottom: 1px solid var(--ink);
+      font-size: 10px; text-transform: uppercase; letter-spacing: .1em; color: var(--ink-2);
+    }
+    table.bom tbody tr { cursor: pointer; }
+    table.bom tbody tr:hover { background: var(--paper-2); }
+    table.bom tbody tr.active { background: #E4E7F0; }
+    table.bom tbody tr.active td { border-color: var(--ink); }
+    .c-act { width: 64px; white-space: nowrap; text-align: right; }
+    .c-act .icon-btn { border: 1px solid var(--ink); background: var(--paper); padding: 2px 6px; margin-left: 4px; cursor: pointer; }
+    .dot { display: inline-block; width: 8px; height: 8px; border: 1px solid var(--ink-3); margin-right: 7px; vertical-align: middle; border-radius: 50% !important; }
+    .dot.placed { background: var(--hazard); border-color: var(--hazard); }
+
+    #status { color: var(--ink-2); }
+    @media (max-width: 820px) {
+      .editor { grid-template-columns: 1fr; }
+      .thumbs { flex-direction: row; height: auto; }
+      .thumb { width: 96px; flex-shrink: 0; }
+    }
+  </style>
+</head>
+<body>
+  <div id="bom">
+    <!-- topbar -->
+    <header id="topbar">
+      <div class="brand">
+        <span class="tb-name">PCBSpy — BOM</span>
+        <span class="tb-sub">bill of materials · component locator</span>
+      </div>
+      <button class="btn ghost" id="newBtn" title="Start a new empty project (clears the in-browser session)">✧ New</button>
+      <button class="btn ghost" id="openBtn" title="Open a saved .zip project">Open project…</button>
+      <button class="btn ok" id="demoBtn" title="Load the demo project">▶ Load Demo</button>
+      <button class="btn" id="saveBtn" title="Save project (with BOM) as .zip">💾 Save</button>
+      <button class="btn" id="csvBtn" title="Export the component list as a CSV file (no images)">⤓ Export CSV</button>
+      <span class="spacer"></span>
+      <button class="btn primary" id="addBtn" title="Add a new component">＋ Add Component</button>
+      <a class="btn ghost" href="detect.html" title="Automatic component detection">◎ Auto-detect</a>
+      <a class="btn ghost" href="app.html" title="Back to the board editor">← Board editor</a>
+    </header>
+
+    <div id="bom-body">
+      <!-- editor: closeup | image picker | form -->
+      <section class="editor">
+        <div class="viewport-wrap">
+          <canvas id="viewport"></canvas>
+          <div id="placeHint" style="display:none">
+            Drag to draw a box around the component. Wheel = zoom · Shift-drag / middle-drag = pan.
+          </div>
+          <span id="zoomLabel"></span>
+        </div>
+
+        <div class="thumbs" id="thumbs"></div>
+
+        <div class="form">
+          <div class="editor-title" id="editorTitle">No element selected</div>
+          <div class="frow">
+            <label for="fRef">Ref</label>
+            <input id="fRef" type="text" placeholder="R32" autocomplete="off">
+          </div>
+          <div class="frow">
+            <label for="fType">Type</label>
+            <select id="fType"></select>
+          </div>
+          <div class="frow">
+            <label for="fVal">Value</label>
+            <input id="fVal" type="text" placeholder="10k" autocomplete="off">
+          </div>
+          <div class="frow">
+            <label for="fDesc">Desc</label>
+            <textarea id="fDesc" rows="2" placeholder="0603, package, notes…"></textarea>
+          </div>
+          <div class="form-actions">
+            <button class="btn" id="placeBtn" title="Draw the component's box on the chosen image">⊹ Set on PCB</button>
+            <span class="spacer"></span>
+            <button class="btn danger small" id="fDelete">Delete</button>
+            <button class="btn primary small" id="fSave">Save</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- BOM list -->
+      <div class="table-head">
+        <h2>Components</h2>
+        <span id="bomCount">0 items</span>
+        <span class="spacer" style="flex:1"></span>
+        <span id="status"></span>
+      </div>
+      <div class="table-scroll">
+        <table class="bom">
+          <thead>
+            <tr>
+              <th class="c-ref">Ref</th>
+              <th class="c-type">Type</th>
+              <th class="c-val">Value</th>
+              <th class="c-desc">Description</th>
+              <th class="c-act"></th>
+            </tr>
+          </thead>
+          <tbody id="bomBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <script src="js/store.js"></script>
+  <script src="js/mat3.js"></script>
+  <script src="js/persistence.js"></script>
+  <script src="js/bom.js"></script>
+  <script>window.addEventListener('DOMContentLoaded', () => window.BOM.init());</script>
+</body>
+</html>

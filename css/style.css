@@ -88,6 +88,9 @@ body {
 }
 #tools .btn { text-align: left; width: 100%; }
 .flip-actions { display: none; flex-direction: column; gap: 5px; padding-left: 10px; }
+.bom-hint { font-size: 10px; color: var(--muted); white-space: normal; line-height: 1.35; }
+.bom-src-row { display: flex; align-items: center; gap: 6px; font-size: 10px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+.bom-src-row select { flex: 1; min-width: 0; font: inherit; font-size: 11px; }
 
 /* Contextual sub-options (shown when the matching tool is active) */
 .sub-options { display: none; flex-direction: column; gap: 5px; padding-left: 10px; }

@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 500" role="img" aria-label="Layer alignment demonstration: two PCB scans overlaid and co-registered by landmark points" font-family="'JetBrains Mono','IBM Plex Mono',ui-monospace,Consolas,monospace">
+  <rect width="800" height="500" fill="#F0EDE4"/>
+  <!-- titleblock -->
+  <rect x="0" y="0" width="800" height="34" fill="#E8E4D8"/>
+  <line x1="0" y1="34" x2="800" y2="34" stroke="#14171A"/>
+  <text x="18" y="22" fill="#14171A" font-size="13" letter-spacing="1.4" font-weight="700">PCBSPY</text>
+  <text x="110" y="22" fill="#8B8E8A" font-size="10" letter-spacing="1">ALIGN LAYERS · LANDMARK WIZARD</text>
+
+  <!-- Bottom (moving) board scan -->
+  <g transform="translate(250 150) rotate(-8)" opacity="0.7">
+    <rect x="0" y="0" width="320" height="230" fill="#2f5138" stroke="#14171A"/>
+    <rect x="24" y="26" width="90" height="60" fill="#24402c"/>
+    <rect x="150" y="30" width="140" height="40" fill="#24402c"/>
+    <rect x="40" y="130" width="240" height="70" fill="#24402c"/>
+  </g>
+  <!-- Top (fixed) board scan -->
+  <g transform="translate(230 130)" opacity="0.85">
+    <rect x="0" y="0" width="320" height="230" fill="#3a5a42" stroke="#14171A"/>
+    <rect x="24" y="26" width="90" height="60" fill="#2c4a35"/>
+    <rect x="150" y="30" width="140" height="40" fill="#2c4a35"/>
+    <rect x="40" y="130" width="240" height="70" fill="#2c4a35"/>
+  </g>
+
+  <!-- Landmark pairs (hazard) -->
+  <g stroke="#E8531B" stroke-width="1.5" stroke-dasharray="4 3">
+    <line x1="300" y1="176" x2="292" y2="196"/>
+    <line x1="470" y1="168" x2="486" y2="150"/>
+    <line x1="330" y1="300" x2="316" y2="318"/>
+  </g>
+  <g fill="none" stroke="#E8531B" stroke-width="2">
+    <circle cx="300" cy="176" r="8"/><circle cx="470" cy="168" r="8"/><circle cx="330" cy="300" r="8"/>
+    <circle cx="292" cy="196" r="8"/><circle cx="486" cy="150" r="8"/><circle cx="316" cy="318" r="8"/>
+  </g>
+  <g fill="#E8531B" font-size="10" font-weight="700">
+    <text x="311" y="180">1</text><text x="481" y="172">2</text><text x="341" y="304">3</text>
+  </g>
+
+  <!-- wizard panel -->
+  <rect x="596" y="150" width="186" height="210" fill="#F0EDE4" stroke="#14171A"/>
+  <text x="612" y="176" fill="#4A4E52" font-size="10" letter-spacing="1">FIXED    TOP SCAN</text>
+  <text x="612" y="196" fill="#4A4E52" font-size="10" letter-spacing="1">MOVING   BOTTOM SCAN</text>
+  <line x1="612" y1="210" x2="766" y2="210" stroke="#DAD5C7"/>
+  <text x="612" y="234" fill="#14171A" font-size="11" letter-spacing="1">PAIRS  3 / 5</text>
+  <rect x="612" y="248" width="154" height="26" fill="#14171A"/>
+  <text x="689" y="265" fill="#F0EDE4" font-size="10" letter-spacing="1.2" text-anchor="middle">COMPUTE</text>
+  <rect x="612" y="280" width="154" height="26" fill="#2f8f4e" stroke="#256e3d"/>
+  <text x="689" y="297" fill="#fff" font-size="10" letter-spacing="1.2" text-anchor="middle">ACCEPT</text>
+  <text x="612" y="332" fill="#8B8E8A" font-size="9.5">Least-squares homography</text>
+  <text x="612" y="348" fill="#8B8E8A" font-size="9.5">co-registers both sides</text>
+</svg>

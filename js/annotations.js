@@ -308,17 +308,22 @@
       for (const m of this.markers) {
         if (!this.isVisibleShape(m)) continue;
         const sel = selected && selected.kind === 'marker' && selected.id === m.id;
-        const stroke = sel ? '#7ee081' : (m.color || '#59b35c');
+        const col = m.color || '#59b35c';   // keep the marker's own colour, even when selected
         const [ax, ay] = cam.worldToScreen(this.targetAnchor(m));
         const box = this._markerBox(m, cam);
         ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(box.x, box.y + box.h);
-        ctx.lineWidth = 1.5; ctx.strokeStyle = stroke; ctx.stroke();
-        ctx.beginPath(); ctx.arc(ax, ay, 3, 0, Math.PI * 2); ctx.fillStyle = m.color || '#59b35c'; ctx.fill();
+        ctx.lineWidth = sel ? 2.5 : 1.5; ctx.strokeStyle = col; ctx.stroke();
+        ctx.beginPath(); ctx.arc(ax, ay, 3, 0, Math.PI * 2); ctx.fillStyle = col; ctx.fill();
         roundRect(ctx, box.x, box.y, box.w, box.h, 4);
-        ctx.fillStyle = sel ? '#2f6d32' : '#264d28'; ctx.fill();
-        ctx.lineWidth = 1.5; ctx.strokeStyle = stroke; ctx.stroke();
+        ctx.fillStyle = '#264d28'; ctx.fill();
+        ctx.lineWidth = sel ? 2.5 : 1.5; ctx.strokeStyle = col; ctx.stroke();
         ctx.fillStyle = '#eaffea'; ctx.textAlign = 'left';
         ctx.fillText(m.shortName, box.x + 6, box.y + box.h / 2 + 1);
+        // selection cue: a neutral white dashed ring (does not replace the colour)
+        if (sel) {
+          roundRect(ctx, box.x - 3, box.y - 3, box.w + 6, box.h + 6, 6);
+          ctx.setLineDash([4, 3]); ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.stroke(); ctx.setLineDash([]);
+        }
       }
       ctx.restore();
     }

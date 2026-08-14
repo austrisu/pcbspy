@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PCBSpy — Auto-detect</title>
+  <link rel="stylesheet" href="css/style.css">
+  <style>
+    html, body { height: 100%; margin: 0; overflow: hidden; }
+    #det { display: flex; flex-direction: column; height: 100vh; }
+    #topbar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; }
+    #topbar .brand { margin-right: 8px; }
+    #topbar .spacer { flex: 1; }
+
+    #det-body { flex: 1; display: flex; min-height: 0; }
+
+    /* left: images + params */
+    .side { width: 260px; flex-shrink: 0; border-right: 1px solid var(--ink); padding: 10px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; }
+    .side h3 { font-size: 12px; margin: 0 0 6px; text-transform: uppercase; letter-spacing: .1em; border-bottom: 1px solid var(--ink); padding-bottom: 3px; }
+    .thumbs { display: flex; flex-direction: column; gap: 6px; }
+    .thumb { position: relative; padding: 0; border: 1px solid var(--ink); background: var(--paper-2); cursor: pointer; line-height: 0; }
+    .thumb canvas { width: 100%; height: auto; display: block; }
+    .thumb.on { outline: 2px solid var(--hazard); outline-offset: -1px; }
+    .thumb-star { position: absolute; top: 2px; right: 3px; color: var(--hazard); font-size: 12px; }
+    .thumb-empty { color: var(--ink-3); font-size: 10px; text-align: center; padding: 10px; line-height: 1.5; }
+
+    .param { margin-bottom: 10px; }
+    .param label { display: flex; justify-content: space-between; font-size: 10px; text-transform: uppercase; letter-spacing: .08em; color: var(--ink-2); margin-bottom: 3px; }
+    .param input[type=range] { width: 100%; }
+    .param input[type=number], .param select { width: 100%; font: inherit; font-size: 12px; padding: 3px 5px; background: var(--paper); border: 1px solid var(--ink); color: var(--ink); }
+    details.adv summary { font-size: 11px; cursor: pointer; color: var(--ink-2); text-transform: uppercase; letter-spacing: .08em; }
+    .note { font-size: 10px; color: var(--ink-3); line-height: 1.4; }
+    .note.hz { color: var(--hazard); }
+
+    /* center: preview */
+    .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+    .preview-wrap { flex: 1; position: relative; background: #DED9CC; border-bottom: 1px solid var(--ink); min-height: 0; }
+    #preview { width: 100%; height: 100%; display: block; }
+    #modelStatus { padding: 6px 12px; font-size: 11px; color: var(--ink-2); border-bottom: 1px solid var(--grid-line); }
+    .barrow { display: flex; align-items: center; gap: 12px; padding: 8px 12px; }
+    .barrow #count { font-size: 11px; color: var(--ink-3); }
+    .barrow #status { color: var(--ink-2); flex: 1; }
+  </style>
+</head>
+<body>
+  <div id="det">
+    <header id="topbar">
+      <div class="brand">
+        <span class="tb-name">PCBSpy — Auto-detect</span>
+        <span class="tb-sub">component detection · YOLO / ONNX</span>
+      </div>
+      <button class="btn ghost" id="openBtn" title="Open a saved .zip project">Open project…</button>
+      <button class="btn ok" id="demoBtn" title="Load the demo project">▶ Load Demo</button>
+      <span class="spacer"></span>
+      <button class="btn primary" id="addBtn" title="Add detected boxes to the BOM as components" disabled>Add to BOM →</button>
+      <a class="btn ghost" href="app.html" title="Back to the board editor">← Board editor</a>
+      <a class="btn ghost" href="bom.html" title="Open the BOM editor">☰ BOM</a>
+    </header>
+
+    <div id="det-body">
+      <aside class="side">
+        <div>
+          <h3>Detect on image</h3>
+          <div class="thumbs" id="thumbs"></div>
+          <p class="note hz" style="margin-top:6px;">Align your layers first — boxes are saved in absolute board coordinates.</p>
+        </div>
+
+        <div>
+          <h3>Model</h3>
+          <button class="btn small" id="loadModelBtn" title="Load the ONNX component detector">⭑ Load model</button>
+          <label class="btn small ghost" for="modelFile" title="Pick a local .onnx file" style="display:inline-block;margin-top:4px;">Load .onnx file…</label>
+          <input id="modelFile" type="file" accept=".onnx" hidden>
+        </div>
+
+        <div>
+          <h3>Detection</h3>
+          <div class="param">
+            <label>Confidence <span id="pConfV">0.25</span></label>
+            <input id="pConf" type="range" min="0.05" max="0.9" step="0.01" value="0.25">
+          </div>
+          <div class="param">
+            <label>IoU (NMS) <span id="pIouV">0.45</span></label>
+            <input id="pIou" type="range" min="0.1" max="0.9" step="0.01" value="0.45">
+          </div>
+          <details class="adv">
+            <summary>Advanced</summary>
+            <div class="param" style="margin-top:8px;">
+              <label>Input size (must match export)</label>
+              <select id="pInputSize"><option>320</option><option selected>640</option><option>1280</option></select>
+            </div>
+            <div class="param">
+              <label>Max detections</label>
+              <input id="pMaxDet" type="number" min="1" max="1000" value="300">
+            </div>
+            <div class="param">
+              <label>Min box frac</label>
+              <input id="pMinFrac" type="number" min="0" max="0.05" step="0.001" value="0">
+            </div>
+            <div class="param">
+              <label>Max box frac</label>
+              <input id="pMaxFrac" type="number" min="0.05" max="1" step="0.05" value="1">
+            </div>
+            <div class="param">
+              <label>Execution provider</label>
+              <select id="pEp"><option value="wasm" selected>wasm</option><option value="webgpu">webgpu</option></select>
+            </div>
+          </details>
+        </div>
+
+        <button class="btn primary" id="runBtn" title="Run component detection on the chosen image">◎ Run detection</button>
+      </aside>
+
+      <div class="main">
+        <div id="modelStatus">Model not loaded.</div>
+        <div class="preview-wrap"><canvas id="preview"></canvas></div>
+        <div class="barrow">
+          <span id="count">0 boxes</span>
+          <span id="status"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/ort.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <script src="js/store.js"></script>
+  <script src="js/mat3.js"></script>
+  <script src="js/persistence.js"></script>
+  <script src="js/detect.js"></script>
+  <script>window.addEventListener('DOMContentLoaded', () => window.Detect.init());</script>
+</body>
+</html>

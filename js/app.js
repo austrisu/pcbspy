@@ -8,7 +8,7 @@
   const SRC = [[0, 0], [1, 0], [1, 1], [0, 1]];
   const TRANSFORM_TOOLS = ['move', 'scale', 'rotate', 'flip', 'freeform'];
   const POINT_TOOLS = ['via', 'tag', 'hole', 'pad', 'ground', 'vcc']; // each places a point of that kind
-  const CROSSHAIR_TOOLS = ['via', 'tag', 'hole', 'pad', 'ground', 'vcc', 'rect', 'quad', 'line', 'marker']; // full-view guide cross
+  const CROSSHAIR_TOOLS = ['via', 'tag', 'hole', 'pad', 'ground', 'vcc', 'rect', 'quad', 'line', 'marker', 'bomrect']; // full-view guide cross
   const ANNOTATE_TOOLS = ['via', 'tag', 'hole', 'pad', 'ground', 'vcc', 'rect', 'quad', 'line', 'marker'];
   const SIDES = ['top', 'bottom', 'through'];
   const SIDE_LETTER = { top: 'T', bottom: 'B', through: '⊕' };
@@ -33,6 +33,7 @@
     cursor: null,            // last pointer position (screen px) for the guide cross
     adjustExpanded: false,   // layer color-adjustments section collapsed by default
     rectStart: null,         // first corner (world) while drawing a two-click rectangle
+    bomBox: null,            // transient BOM element box (world rect) + source layer, until Apply
     quadPts: null,           // clicked corners (world) while drawing a freeform quad
     linePts: null,           // vertices (world) while drawing a polyline
     _lastLineClick: null,    // for double-click-to-finish detection
@@ -42,6 +43,9 @@
     preview: null,
     spaceDown: false,
     dirty: true,
+    bomData: null,           // BOM list (owned by bom.html); passed through so autosave/save keeps it
+    _restored: false,        // gate autosave until the initial IndexedDB restore has run
+    _metaTimer: null,
     W: 0, H: 0, dpr: 1,
 
     init() {
@@ -102,6 +106,126 @@
       this.renderAnnotateView();
       this.updateReadout();
       this.hint('Add images to begin. Scroll to zoom, drag with Pan to move the view.');
+      this.restoreFromStore();
+    },
+
+    // ---------------- working-store autosave (IndexedDB, shared with bom.html) ----------------
+    async restoreFromStore() {
+      try {
+        const data = ProjectStore.available ? await ProjectStore.load() : null;
+        if (data && data.project && (data.project.layers || []).length) {
+          await this.applyProject(data.project, data.images);
+          this.hint('Restored your last session (' + this.layers.length + ' layers). Save to a .zip to keep a copy.');
+          this.applyLocateHandoff();
+        } else if (data && data.project && data.project.bom) {
+          this.bomData = data.project.bom;  // BOM created before any board images
+        }
+      } catch (e) { console.warn('Restore failed:', e); }
+      this._restored = true;
+    },
+    autosaveMeta() {
+      if (!this._restored || !ProjectStore.available) return;
+      clearTimeout(this._metaTimer);
+      this._metaTimer = setTimeout(() => ProjectStore.saveMeta(this.projectData()), 600);
+    },
+    autosaveFull() {
+      if (!this._restored || !ProjectStore.available) return;
+      ProjectStore.save(this.projectData(), this.blobs);
+    },
+    async newProject() {
+      if (!confirm('Start a new, empty project?\n\nThis clears the current in-browser session (images, annotations and BOM). Any .zip files you saved to disk are untouched.')) return;
+      try { await ProjectStore.clear(); } catch (e) { console.warn(e); }
+      location.reload();   // simplest clean reset; restore then finds an empty store
+    },
+
+    // ---------------- BOM element hand-off ----------------
+    // Populate the BOM tool's Source dropdown (front-most layer first), preserving
+    // the current pick when possible, else defaulting to the active layer.
+    renderBomSrcOptions() {
+      const sel = document.getElementById('bomSrcSelect');
+      if (!sel) return;
+      const prev = sel.value;
+      sel.innerHTML = '';
+      const topFirst = this.layers.slice().reverse();
+      for (const l of topFirst) {
+        const o = document.createElement('option');
+        o.value = l.id; o.textContent = l.name;
+        sel.appendChild(o);
+      }
+      if (prev && this.layers.some(l => l.id === prev)) sel.value = prev;
+      else if (this.activeId && this.layers.some(l => l.id === this.activeId)) sel.value = this.activeId;
+      else if (topFirst.length) sel.value = topFirst[0].id;
+    },
+    bomSourceLayer() {
+      const sel = document.getElementById('bomSrcSelect');
+      return (sel && this.layers.find(l => l.id === sel.value)) || this.activeLayer();
+    },
+    updateBomActions() {
+      const apply = document.getElementById('bomApply');
+      const clear = document.getElementById('bomClear');
+      if (!apply || !clear) return;
+      apply.disabled = !this.bomBox;
+      clear.disabled = !this.bomBox;
+    },
+    // Center + zoom the camera to frame a world-space rectangle (no layer changes).
+    frameWorldRect(minx, miny, maxx, maxy, pad = 2.2) {
+      const wr = Math.max(1e-6, maxx - minx), hr = Math.max(1e-6, maxy - miny);
+      this.camera.cx = (minx + maxx) / 2;
+      this.camera.cy = (miny + maxy) / 2;
+      const zx = this.W / (wr * pad), zy = this.H / (hr * pad);
+      this.camera.zoom = Math.max(0.02, Math.min(zx, zy));
+      this.scheduleRender();
+    },
+    // Arrived from the BOM page's "locate" button: jump to that element's box.
+    applyLocateHandoff() {
+      let id;
+      try { id = sessionStorage.getItem('pcbspy_locate'); sessionStorage.removeItem('pcbspy_locate'); } catch (_) { id = null; }
+      if (!id || !Array.isArray(this.bomData)) return;
+      const it = this.bomData.find(x => x.id === id);
+      if (!it || !it.loc || !Array.isArray(it.loc.quad) || it.loc.quad.length < 3) return;
+      const xs = it.loc.quad.map(p => p[0]), ys = it.loc.quad.map(p => p[1]);
+      this.frameWorldRect(Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys));
+      this.hint('Zoomed to ' + (it.ref || 'BOM element') + '. Layer arrangement is unchanged.');
+    },
+    clearBomBox() {
+      this.bomBox = null;
+      this.rectStart = null;
+      this.preview = null;
+      this.updateBomActions();
+      this.hint('BOM box cleared.');
+      this.scheduleRender();
+    },
+    async applyBomElement() {
+      if (!this.bomBox) { this.hint('Draw a box around a component first.'); return; }
+      const { x, y, w, h, filename } = this.bomBox;
+      const quad = [[x, y], [x + w, y], [x + w, y + h], [x, y + h]]; // world-space corners
+      const id = 'bom_' + Math.random().toString(36).slice(2, 9);
+      if (!Array.isArray(this.bomData)) this.bomData = [];
+      this.bomData.push({ id, ref: '', type: '', value: '', description: '', loc: { image: filename, quad } });
+      try {
+        // Persist the draft into the shared store, then hand off to the BOM page.
+        if (ProjectStore.available) await ProjectStore.save(this.projectData(), this.blobs);
+        sessionStorage.setItem('pcbspy_bom_focus', id);
+      } catch (e) { console.warn('BOM hand-off save failed:', e); }
+      this.bomBox = null;
+      window.location.href = 'bom.html';
+    },
+    showBomWarning() {
+      let seen = false;
+      try { seen = localStorage.getItem('pcbspy_bom_warn_seen') === '1'; } catch (_) {}
+      const modal = document.getElementById('bomWarnModal');
+      if (seen || !modal) { window.location.href = 'bom.html'; return; }
+      const ok = document.getElementById('bomWarnOk');
+      const cancel = document.getElementById('bomWarnCancel');
+      modal.classList.add('open');
+      const close = (go) => {
+        modal.classList.remove('open');
+        ok.onclick = null; cancel.onclick = null; modal.onclick = null;
+        if (go) { try { localStorage.setItem('pcbspy_bom_warn_seen', '1'); } catch (_) {} window.location.href = 'bom.html'; }
+      };
+      ok.onclick = () => close(true);
+      cancel.onclick = () => close(false);
+      modal.onclick = (e) => { if (e.target === modal) close(false); };
     },
 
     fatal(msg) {
@@ -111,7 +235,7 @@
     },
 
     // ---------------- rendering ----------------
-    scheduleRender() { this.dirty = true; },
+    scheduleRender() { this.dirty = true; this.autosaveMeta(); },
 
     // Render every frame. On-demand rendering (only when `dirty`) left the WebGL
     // canvas showing a stale/previous frame when the cursor moved over other
@@ -159,6 +283,25 @@
         ctx.lineWidth = 1.5;
         ctx.strokeRect(Math.min(a[0], b[0]), Math.min(a[1], b[1]),
           Math.abs(b[0] - a[0]), Math.abs(b[1] - a[1]));
+        ctx.restore();
+      }
+
+      // Committed BOM element box (transient, until Apply), drawn in hazard orange.
+      if (this.bomBox) {
+        const p = this.bomBox;
+        const a = this.cam.worldToScreen([p.x, p.y]);
+        const b = this.cam.worldToScreen([p.x + p.w, p.y + p.h]);
+        const x = Math.min(a[0], b[0]), y = Math.min(a[1], b[1]);
+        const w = Math.abs(b[0] - a[0]), h = Math.abs(b[1] - a[1]);
+        ctx.save();
+        ctx.strokeStyle = '#E8531B';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(x, y, w, h);
+        ctx.fillStyle = 'rgba(232,83,27,0.10)';
+        ctx.fillRect(x, y, w, h);
+        ctx.fillStyle = '#E8531B';
+        ctx.font = '11px "JetBrains Mono", ui-monospace, monospace';
+        ctx.fillText('BOM', x, Math.max(11, y - 4));
         ctx.restore();
       }
 
@@ -314,6 +457,7 @@
       if (first && this.layers.length) this.fitToLayer(this.layers[0]);
       this.renderPanel();
       this.scheduleRender();
+      this.autosaveFull();   // persist new image blobs into the working store
     },
 
     // Place a rendered footprint canvas as an ordinary (image) layer.
@@ -333,6 +477,7 @@
       if (first) this.fitToLayer(layer);
       this.renderPanel();
       this.scheduleRender();
+      this.autosaveFull();   // persist the footprint image blob into the working store
     },
 
     buildLayer(cfg) {
@@ -434,6 +579,7 @@
     },
 
     renderPanel() {
+      this.renderBomSrcOptions();   // keep the BOM tool's Source dropdown in sync with the layers
       const list = this.layerPanel;
       list.innerHTML = '';
       // Show top layer first.
@@ -754,6 +900,29 @@
           }
         }
         this.scheduleRender();
+      } else if (t === 'bomrect') {
+        // BOM element box: two-click rectangle. Source image = the layer chosen in
+        // the BOM tool's Source dropdown (falls back to the active layer).
+        const layer = this.bomSourceLayer();
+        if (!layer) { this.hint('Add a layer first — then pick it under Source and draw the box.'); return; }
+        if (!this.rectStart) {
+          this.rectStart = wp;
+          this.preview = { type: 'rect', x: wp[0], y: wp[1], w: 0, h: 0 };
+          this.hint('BOM box: click the opposite corner to finish (Esc to cancel).');
+        } else {
+          const x = Math.min(this.rectStart[0], wp[0]);
+          const y = Math.min(this.rectStart[1], wp[1]);
+          const w = Math.abs(wp[0] - this.rectStart[0]);
+          const h = Math.abs(wp[1] - this.rectStart[1]);
+          this.rectStart = null;
+          this.preview = null;
+          if (w > 1e-3 || h > 1e-3) {
+            this.bomBox = { x, y, w, h, layerId: layer.id, layerName: layer.name, filename: layer.filename };
+            this.hint('Box drawn on “' + layer.name + '”. Click Apply → to fill in its BOM fields.');
+          }
+          this.updateBomActions();
+        }
+        this.scheduleRender();
       } else if (t === 'quad') {
         // Freeform quad: click all four corners; the 4th click finalizes it.
         if (!this.quadPts) this.quadPts = [];
@@ -856,7 +1025,7 @@
       this.cursor = sp;
       if (CROSSHAIR_TOOLS.includes(this.tool)) this.scheduleRender(); // track guide cross
       // Rubber-band the pending two-click rectangle's opposite corner.
-      if (this.rectStart && this.tool === 'rect') {
+      if (this.rectStart && (this.tool === 'rect' || this.tool === 'bomrect')) {
         const w = this.cam.screenToWorld(sp);
         this.preview.x = Math.min(this.rectStart[0], w[0]);
         this.preview.y = Math.min(this.rectStart[1], w[1]);
@@ -997,7 +1166,7 @@
           this.selected = null; this.closePopup(); this.refreshNets(); this.renderAnnotateView(); this.scheduleRender(); e.preventDefault();
         }
         if (e.key === 'Enter' && this.linePts) { this.finishLine(); e.preventDefault(); return; }
-        if (e.key === 'Escape') { this.selected = null; this.drag = null; this.preview = null; this.rectStart = null; this.quadPts = null; this.linePts = null; this._lastLineClick = null; this._lineNet = null; this.hideTip(); this.closePopup(); this.scheduleRender(); }
+        if (e.key === 'Escape') { this.selected = null; this.drag = null; this.preview = null; this.rectStart = null; this.quadPts = null; this.linePts = null; this._lastLineClick = null; this._lineNet = null; this.bomBox = null; this.updateBomActions(); this.hideTip(); this.closePopup(); this.scheduleRender(); }
         const map = { m: 'move', s: 'scale', r: 'rotate', f: 'freeform', h: 'pan', b: 'rect', k: 'marker' };
         if (map[e.key] && !e.ctrlKey && !e.metaKey) this.setTool(map[e.key]);
       });
@@ -1028,6 +1197,16 @@
       document.getElementById('footprintBtn').onclick = () => this.footprints.open();
       const helpBtn = document.getElementById('helpBtn');
       if (helpBtn) helpBtn.onclick = () => window.open('help.html', '_blank');
+      const demoBtn = document.getElementById('demoBtn');
+      if (demoBtn) demoBtn.onclick = () => this.loadDemo();
+      const newBtn = document.getElementById('newBtn');
+      if (newBtn) newBtn.onclick = () => this.newProject();
+      const bomBtn = document.getElementById('bomBtn');
+      if (bomBtn) bomBtn.onclick = (e) => { e.preventDefault(); this.showBomWarning(); };
+      const bomApply = document.getElementById('bomApply');
+      if (bomApply) bomApply.onclick = () => this.applyBomElement();
+      const bomClear = document.getElementById('bomClear');
+      if (bomClear) bomClear.onclick = () => this.clearBomBox();
       document.getElementById('resetView').onclick = () => {
         if (this.layers.length) this.fitToLayer(this.activeLayer() || this.layers[0]);
         else { this.camera = { cx: 0, cy: 0, zoom: 1 }; }
@@ -1284,6 +1463,11 @@
         b.classList.toggle('active', b.dataset.tool === tool);
       });
       document.getElementById('flipActions').style.display = tool === 'flip' ? 'flex' : 'none';
+      if (tool !== 'bomrect') this.bomBox = null;   // leaving the tool discards an un-applied box
+      const bomActions = document.getElementById('bomActions');
+      if (bomActions) bomActions.style.display = tool === 'bomrect' ? 'flex' : 'none';
+      if (tool === 'bomrect') this.renderBomSrcOptions();
+      this.updateBomActions();
       // Tool-options popover for annotate tools; re-clicking the active tool toggles it.
       if (ANNOTATE_TOOLS.includes(tool)) {
         if (this.popoverOpen && this.popoverTool === tool) this.closePopover();
@@ -1311,6 +1495,7 @@
         quad: 'Freeform: click the 4 corners in turn to define a quadrilateral (Esc to cancel).',
         line: 'Line: click to add points; double-click or Enter to finish, Esc to cancel.',
         marker: 'Marker: click a point or rectangle to attach a labelled marker.',
+        bomrect: 'BOM element: select the source layer in the Layers panel, then draw a box around a component. Apply → sends it to the BOM page.',
       };
       this.hint(help[tool] || '');
       this.updateReadout();
@@ -1463,8 +1648,8 @@
 
     // ---------------- persistence ----------------
     projectData() {
-      return {
-        version: 2,
+      const d = {
+        version: 3,
         app: 'pcbspy',
         camera: { cx: this.camera.cx, cy: this.camera.cy, zoom: this.camera.zoom },
         layers: this.layers.map(l => ({
@@ -1483,6 +1668,8 @@
         })),
         annotations: this.ann.serialize(),
       };
+      if (this.bomData) d.bom = this.bomData;  // owned by bom.html; passed through untouched
+      return d;
     },
 
     // pcbspy_data_YYYYMMDD_HHMMSS.zip
@@ -1520,6 +1707,22 @@
       }
     },
 
+    // Fetch and open the bundled demo project from /demo.zip.
+    async loadDemo() {
+      this.hint('Loading demo…');
+      try {
+        const res = await fetch('demo.zip?b=' + Date.now());
+        if (!res.ok) throw new Error('demo.zip not found (' + res.status + ')');
+        const blob = await res.blob();
+        const { project, images } = await Persistence.loadZip(blob);
+        await this.applyProject(project, images);
+        this.hint('Loaded demo project (' + this.layers.length + ' layers).');
+      } catch (e) {
+        this.hint('Could not load demo: ' + e.message + (location.protocol === 'file:' ? ' — serve over http to fetch demo.zip.' : ''));
+        console.error(e);
+      }
+    },
+
     async applyProject(project, images) {
       // Clear existing state
       for (const l of this.layers) { this.renderer.deleteTexture(l.texture); l.bitmap.close && l.bitmap.close(); }
@@ -1528,6 +1731,7 @@
       this.usedNames = new Set();
       this.ann.clear();
       this.selected = null;
+      this.bomData = project.bom || null;   // preserve BOM (owned by bom.html)
 
       for (const ld of project.layers || []) {
         const blob = images.get(ld.filename) || images.get('images/' + ld.filename);
@@ -1555,6 +1759,7 @@
       this.renderPanel();
       this.renderAnnotateView();
       this.scheduleRender();
+      this.autosaveFull();   // mirror the freshly loaded project into the working store
     },
 
     // ---------------- resize ----------------
